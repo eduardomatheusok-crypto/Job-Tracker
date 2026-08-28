@@ -30,6 +30,9 @@ public class ApplicationRequest {
 	@Size(max = 500)
 	private String jobUrl;
 
+	@Size(max = 150)
+	private String platform;
+
 	@Size(max = 2000)
 	private String notes;
 

@@ -9,7 +9,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
@@ -31,7 +30,7 @@ public class GmailConnection {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	@OneToOne(fetch = FetchType.LAZY, optional = false)
+	@OneToOne(fetch = FetchType.EAGER, optional = false)
 	@JoinColumn(name = "user_id", nullable = false, unique = true)
 	private User user;
 
@@ -61,10 +60,5 @@ public class GmailConnection {
 		final Instant now = Instant.now();
 		connectedAt = now;
 		active = true;
-	}
-
-	@PreUpdate
-	void preUpdate() {
-		lastSyncedAt = Instant.now();
 	}
 }

@@ -2,6 +2,9 @@ package jobtracker.security;
 
 import static org.springframework.security.config.Customizer.withDefaults;
 
+import jakarta.servlet.http.HttpServletResponse;
+import java.util.Arrays;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -24,6 +27,9 @@ public class SecurityConfig {
 	private final UserDetailsConfig userDetailsConfig;
 	private final PasswordEncoder passwordEncoder;
 
+	@Value("${app.cors.allowed-origins:}")
+	private String allowedOrigins;
+
 	public SecurityConfig(
 		JwtAuthenticationFilter jwtAuthenticationFilter,
 		UserDetailsConfig userDetailsConfig,
@@ -40,6 +46,22 @@ public class SecurityConfig {
 			.csrf(csrf -> csrf.disable())
 			.cors(withDefaults())
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+			.exceptionHandling(handling -> handling
+				.authenticationEntryPoint((request, response, authException) -> {
+					response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+					response.setContentType("application/json");
+					response.setCharacterEncoding("UTF-8");
+					response.getWriter().write(
+						"{\"error\":\"Unauthorized\",\"message\":\"Authentication required\"}");
+				})
+				.accessDeniedHandler((request, response, accessDeniedException) -> {
+					response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+					response.setContentType("application/json");
+					response.setCharacterEncoding("UTF-8");
+					response.getWriter().write(
+						"{\"error\":\"Forbidden\",\"message\":\"Access denied\"}");
+				})
+			)
 			.authorizeHttpRequests(auth -> auth
 				.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
 				.requestMatchers(HttpMethod.GET, "/api/gmail/callback").permitAll()
@@ -65,10 +87,22 @@ public class SecurityConfig {
 		return configuration.getAuthenticationManager();
 	}
 
+	/**
+	 * CORS liberado para qualquer origem no ambiente de desenvolvimento.
+	 * Em produção, defina APP_CORS_ALLOWED_ORIGINS (ex.: https://app.vercel.app) para
+	 * restringir exatamente quais origens são aceitas.
+	 */
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
-		configuration.addAllowedOriginPattern("*");
+		if (allowedOrigins == null || allowedOrigins.isBlank()) {
+			configuration.addAllowedOriginPattern("*");
+		} else {
+			Arrays.stream(allowedOrigins.split(","))
+				.map(String::trim)
+				.filter(origin -> !origin.isBlank())
+				.forEach(configuration::addAllowedOrigin);
+		}
 		configuration.addAllowedHeader("*");
 		configuration.addAllowedMethod("*");
 		configuration.setAllowCredentials(true);

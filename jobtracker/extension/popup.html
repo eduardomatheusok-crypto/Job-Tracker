@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+	<meta charset="UTF-8">
+	<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+	<main class="container">
+		<header class="header">
+			<h1>JobTracker</h1>
+			<span id="userEmail" class="user hidden"></span>
+		</header>
+
+		<section id="loginView">
+			<form id="loginForm">
+				<label>
+					Servidor (URL da API)
+					<input type="url" id="apiUrl" placeholder="http://localhost:8080" autocomplete="url">
+				</label>
+				<label>
+					E-mail
+					<input type="email" id="email" autocomplete="email">
+				</label>
+				<label>
+					Senha
+					<input type="password" id="password" autocomplete="current-password">
+				</label>
+				<button type="submit" class="primary">Entrar</button>
+			</form>
+			<p id="loginMessage" class="message"></p>
+		</section>
+
+		<section id="saveView" class="hidden">
+			<form id="saveForm">
+				<label>
+					Empresa *
+					<input type="text" id="companyName" required maxlength="150">
+				</label>
+				<label>
+					Cargo *
+					<input type="text" id="position" required maxlength="150">
+				</label>
+				<label>
+					Localização
+					<input type="text" id="location" maxlength="150">
+				</label>
+				<label>
+					Link da vaga
+					<input type="url" id="jobUrl" maxlength="500">
+				</label>
+				<label>
+					Plataforma
+					<input type="text" id="platform" maxlength="150">
+				</label>
+				<label>
+					Status
+					<select id="status">
+						<option value="SAVED">SAVED</option>
+						<option value="APPLIED">APPLIED</option>
+						<option value="IN_PROCESS">IN_PROCESS</option>
+						<option value="INTERVIEW">INTERVIEW</option>
+						<option value="REJECTED">REJECTED</option>
+						<option value="ACCEPTED">ACCEPTED</option>
+					</select>
+				</label>
+				<label>
+					Anotações
+					<textarea id="notes" rows="3" maxlength="2000" placeholder="Opcional"></textarea>
+				</label>
+				<button type="submit" class="primary">Salvar candidatura</button>
+			</form>
+			<p id="saveMessage" class="message"></p>
+			<button type="button" id="logout" class="link">Sair da conta</button>
+		</section>
+	</main>
+	<script src="popup.js"></script>
+</body>
+</html>

@@ -8,7 +8,5 @@ public interface ApplicationHistoryRepository extends JpaRepository<ApplicationH
 
 	List<ApplicationHistory> findByApplicationIdOrderByChangedAtDesc(Long applicationId);
 
-	List<ApplicationHistory> findByApplicationUserIdOrderByChangedAtDesc(Long userId);
-
 	void deleteByApplicationId(Long applicationId);
 }

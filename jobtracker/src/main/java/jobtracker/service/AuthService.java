@@ -1,6 +1,5 @@
 package jobtracker.service;
 
-import jakarta.transaction.Transactional;
 import jobtracker.dto.auth.AuthResponse;
 import jobtracker.dto.auth.LoginRequest;
 import jobtracker.dto.auth.RegisterRequest;
@@ -12,6 +11,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -43,7 +43,7 @@ public class AuthService {
 			.build();
 	}
 
-	@Transactional(Transactional.TxType.SUPPORTS)
+	@Transactional(readOnly = true)
 	public AuthResponse login(LoginRequest request) {
 		String email = request.getEmail().trim().toLowerCase();
 		try {

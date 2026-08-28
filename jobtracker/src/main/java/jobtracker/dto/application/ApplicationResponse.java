@@ -21,6 +21,7 @@ public class ApplicationResponse {
 	private String position;
 	private String location;
 	private String jobUrl;
+	private String platform;
 	private String notes;
 	private ApplicationStatus status;
 	private Instant appliedAt;

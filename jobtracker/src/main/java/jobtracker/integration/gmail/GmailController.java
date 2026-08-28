@@ -3,12 +3,11 @@ package jobtracker.integration.gmail;
 import java.io.IOException;
 import java.util.Map;
 import jobtracker.entity.User;
-import jobtracker.service.UserService;
+import jobtracker.service.CurrentUserService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -25,32 +24,17 @@ import org.springframework.web.bind.annotation.*;
  *
  * <p>O callback é stateless: o e-mail do usuário viaja criptografado no parâmetro {@code state}
  * gerado em {@code getAuthorizationUrl} e descriptografado aqui pelo {@link GmailOAuthService}.
- *
- * <p>Para obter o usuário autenticado, usa o mesmo padrão do {@code ApplicationService}:
- * lê {@link SecurityContextHolder} e resolve o e-mail via {@link UserService}.
  */
 @RestController
 @RequestMapping("/api/gmail")
 @RequiredArgsConstructor
 public class GmailController {
 
+	private static final Logger log = LoggerFactory.getLogger(GmailController.class);
+
 	private final GmailOAuthService gmailOAuthService;
 	private final GmailService gmailService;
-	private final UserService userService;
-
-	/** URL do frontend para redirecionar após o callback (configurável por ambiente). */
-	@Value("${app.frontend-url:http://localhost:3000}")
-	private String frontendUrl;
-
-	// -----------------------------------------------------------------------
-	// Helpers
-	// -----------------------------------------------------------------------
-
-	/** Obtém o usuário autenticado a partir do SecurityContext (mesmo padrão do ApplicationService). */
-	private User currentUser() {
-		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-		return userService.findByEmailOrThrow(auth.getName());
-	}
+	private final CurrentUserService currentUserService;
 
 	// -----------------------------------------------------------------------
 	// GET /api/gmail/auth-url
@@ -58,7 +42,8 @@ public class GmailController {
 	// -----------------------------------------------------------------------
 	@GetMapping("/auth-url")
 	public ResponseEntity<Map<String, String>> getAuthUrl() throws IOException {
-		String url = gmailOAuthService.getAuthorizationUrl(currentUser().getEmail());
+		User user = currentUserService.get();
+		String url = gmailOAuthService.getAuthorizationUrl(user.getEmail());
 		return ResponseEntity.ok(Map.of("authUrl", url));
 	}
 
@@ -91,7 +76,8 @@ public class GmailController {
 				.header("Content-Type", "text/html; charset=UTF-8")
 				.body(html);
 		} catch (Exception e) {
-			return ResponseEntity.badRequest().body("Erro ao conectar Gmail: " + e.getMessage());
+			log.warn("Gmail callback failed for state={}", state != null ? "set" : "missing", e);
+			return ResponseEntity.badRequest().body("Erro ao conectar Gmail. Tente novamente.");
 		}
 	}
 
@@ -101,7 +87,7 @@ public class GmailController {
 	// -----------------------------------------------------------------------
 	@PostMapping("/sync")
 	public ResponseEntity<Map<String, Object>> syncEmails() throws IOException {
-		int count = gmailService.syncEmails(currentUser().getId());
+		int count = gmailService.syncEmails(currentUserService.get().getId());
 		return ResponseEntity.ok(Map.of(
 			"message", "Sincronização concluída",
 			"emailsProcessed", count
@@ -114,12 +100,13 @@ public class GmailController {
 	// -----------------------------------------------------------------------
 	@GetMapping("/status")
 	public ResponseEntity<Map<String, Object>> getStatus() {
-		return gmailService.findConnectionByUserId(currentUser().getId())
+		return gmailService.findConnectionByUserId(currentUserService.get().getId())
 			.map(conn -> ResponseEntity.ok(Map.<String, Object>of(
 				"connected", conn.isActive(),
-				"gmailAddress", conn.getGmailAddress() != null ? conn.getGmailAddress() : ""
+				"gmailAddress", conn.getGmailAddress() != null ? conn.getGmailAddress() : "",
+				"lastSyncedAt", conn.getLastSyncedAt() != null ? conn.getLastSyncedAt().toString() : ""
 			)))
-			.orElse(ResponseEntity.ok(Map.of("connected", false, "gmailAddress", "")));
+			.orElse(ResponseEntity.ok(Map.of("connected", false, "gmailAddress", "", "lastSyncedAt", "")));
 	}
 
 	// -----------------------------------------------------------------------
@@ -128,7 +115,7 @@ public class GmailController {
 	// -----------------------------------------------------------------------
 	@PostMapping("/disconnect")
 	public ResponseEntity<Map<String, String>> disconnect() {
-		gmailService.disconnectUser(currentUser().getId());
+		gmailService.disconnectUser(currentUserService.get().getId());
 		return ResponseEntity.ok(Map.of("message", "Gmail desconectado com sucesso."));
 	}
 }

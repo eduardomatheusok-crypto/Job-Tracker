@@ -1,6 +1,5 @@
 package jobtracker.service;
 
-import jobtracker.dto.user.UserRequest;
 import jobtracker.dto.user.UserResponse;
 import jobtracker.entity.Role;
 import jobtracker.entity.User;
@@ -37,17 +36,6 @@ public class UserService {
 		return userRepository.existsByEmailIgnoreCase(normalizeEmail(email));
 	}
 
-	public User createUser(UserRequest request, String rawPassword) {
-		User user = User.builder()
-			.name(request.getName())
-			.email(normalizeEmail(request.getEmail()))
-			.password(passwordEncoder.encode(rawPassword))
-			.role(request.getRole() != null ? request.getRole() : Role.USER)
-			.build();
-
-		return userRepository.save(user);
-	}
-
 	public User createUser(String name, String email, String rawPassword, Role role) {
 		User user = User.builder()
 			.name(name)
@@ -56,16 +44,6 @@ public class UserService {
 			.role(role != null ? role : Role.USER)
 			.build();
 
-		return userRepository.save(user);
-	}
-
-	public User updateUser(Long id, UserRequest request) {
-		User user = findByIdOrThrow(id);
-		user.setName(request.getName());
-		user.setEmail(normalizeEmail(request.getEmail()));
-		if (request.getRole() != null) {
-			user.setRole(request.getRole());
-		}
 		return userRepository.save(user);
 	}
 

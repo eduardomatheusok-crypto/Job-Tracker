@@ -52,6 +52,9 @@ public class Application {
 	@Column(length = 500)
 	private String jobUrl;
 
+	@Column(length = 150)
+	private String platform;
+
 	@Column(length = 2000)
 	private String notes;
 

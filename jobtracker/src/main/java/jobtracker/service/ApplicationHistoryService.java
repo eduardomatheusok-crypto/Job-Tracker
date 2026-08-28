@@ -2,6 +2,7 @@ package jobtracker.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import jobtracker.dto.history.ApplicationHistoryResponse;
 import jobtracker.entity.Application;
 import jobtracker.entity.ApplicationHistory;
 import jobtracker.entity.ApplicationStatus;
@@ -47,8 +48,25 @@ public class ApplicationHistoryService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<ApplicationHistory> getHistoryByUserId(Long userId) {
-		return applicationHistoryRepository.findByApplicationUserIdOrderByChangedAtDesc(userId);
+	public List<ApplicationHistoryResponse> getHistoryResponsesByApplicationId(Long applicationId) {
+		return getHistoryByApplicationId(applicationId)
+			.stream()
+			.map(this::toResponse)
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public ApplicationHistoryResponse toResponse(ApplicationHistory history) {
+		return ApplicationHistoryResponse.builder()
+			.id(history.getId())
+			.applicationId(history.getApplication().getId())
+			.changedByUserId(history.getChangedByUser() != null ? history.getChangedByUser().getId() : null)
+			.previousStatus(history.getPreviousStatus())
+			.newStatus(history.getNewStatus())
+			.changedField(history.getChangedField())
+			.note(history.getNote())
+			.changedAt(history.getChangedAt())
+			.build();
 	}
 
 	public void deleteByApplicationId(Long applicationId) {

@@ -1,18 +1,22 @@
 package jobtracker.service;
 
 import jakarta.persistence.EntityNotFoundException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import jobtracker.dto.application.ApplicationRequest;
 import jobtracker.dto.application.ApplicationResponse;
+import jobtracker.dto.application.ApplicationSummaryResponse;
 import jobtracker.dto.application.UpdateApplicationRequest;
 import jobtracker.entity.Application;
 import jobtracker.entity.ApplicationStatus;
 import jobtracker.entity.User;
 import jobtracker.repository.ApplicationRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,15 +27,14 @@ public class ApplicationService {
 
 	private final ApplicationRepository applicationRepository;
 	private final UserService userService;
+	private final CurrentUserService currentUserService;
 	private final ApplicationHistoryService applicationHistoryService;
 
 	@Transactional(readOnly = true)
-	public List<ApplicationResponse> getApplications() {
+	public Page<ApplicationResponse> getApplications(Pageable pageable) {
 		User currentUser = getAuthenticatedUser();
-		return applicationRepository.findAllByUserIdOrderByCreatedAtDesc(currentUser.getId())
-			.stream()
-			.map(this::toResponse)
-			.toList();
+		return applicationRepository.findByUserId(currentUser.getId(), pageable)
+			.map(this::toResponse);
 	}
 
 	@Transactional(readOnly = true)
@@ -40,26 +43,36 @@ public class ApplicationService {
 	}
 
 	public ApplicationResponse createApplication(ApplicationRequest request) {
-		User currentUser = getAuthenticatedUser();
+		return createApplication(request, getAuthenticatedUser());
+	}
 
+	public ApplicationResponse createApplication(ApplicationRequest request, User owner) {
 		Application application = Application.builder()
-			.user(currentUser)
+			.user(owner)
 			.companyName(request.getCompanyName())
 			.position(request.getPosition())
 			.location(request.getLocation())
 			.jobUrl(request.getJobUrl())
+			.platform(request.getPlatform())
 			.notes(request.getNotes())
 			.status(request.getStatus() != null ? request.getStatus() : ApplicationStatus.SAVED)
 			.build();
 
+		if (application.getStatus() == ApplicationStatus.APPLIED && application.getAppliedAt() == null) {
+			application.setAppliedAt(Instant.now());
+		}
+
 		Application savedApplication = applicationRepository.save(application);
-		applicationHistoryService.recordCreation(savedApplication, currentUser);
+		applicationHistoryService.recordCreation(savedApplication, owner);
 		return toResponse(savedApplication);
 	}
 
 	public ApplicationResponse updateApplication(Long id, UpdateApplicationRequest request) {
-		Application application = findOwnedApplication(id);
-		User currentUser = getAuthenticatedUser();
+		return updateApplication(id, request, getAuthenticatedUser());
+	}
+
+	public ApplicationResponse updateApplication(Long id, UpdateApplicationRequest request, User actor) {
+		Application application = findOwnedApplication(id, actor.getId());
 		ApplicationStatus previousStatus = application.getStatus();
 		List<String> changedFields = new ArrayList<>();
 
@@ -79,6 +92,10 @@ public class ApplicationService {
 			application.setJobUrl(request.getJobUrl());
 			changedFields.add("jobUrl");
 		}
+		if (request.getPlatform() != null) {
+			application.setPlatform(request.getPlatform());
+			changedFields.add("platform");
+		}
 		if (request.getNotes() != null) {
 			application.setNotes(request.getNotes());
 			changedFields.add("notes");
@@ -88,11 +105,15 @@ public class ApplicationService {
 			changedFields.add("status");
 		}
 
+		if (application.getStatus() == ApplicationStatus.APPLIED && application.getAppliedAt() == null) {
+			application.setAppliedAt(Instant.now());
+		}
+
 		Application savedApplication = applicationRepository.save(application);
 		if (!changedFields.isEmpty()) {
 			applicationHistoryService.recordUpdate(
 				savedApplication,
-				currentUser,
+				actor,
 				previousStatus,
 				savedApplication.getStatus(),
 				changedFields
@@ -116,6 +137,7 @@ public class ApplicationService {
 			.position(application.getPosition())
 			.location(application.getLocation())
 			.jobUrl(application.getJobUrl())
+			.platform(application.getPlatform())
 			.notes(application.getNotes())
 			.status(application.getStatus())
 			.appliedAt(application.getAppliedAt())
@@ -125,19 +147,40 @@ public class ApplicationService {
 	}
 
 	@Transactional(readOnly = true)
-	protected User getAuthenticatedUser() {
-		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-		if (authentication == null || authentication.getName() == null) {
-			throw new EntityNotFoundException("Authenticated user not found");
+	public ApplicationSummaryResponse getSummary() {
+		User currentUser = getAuthenticatedUser();
+		Map<ApplicationStatus, Long> byStatus = new EnumMap<>(ApplicationStatus.class);
+		for (ApplicationStatus status : ApplicationStatus.values()) {
+			byStatus.put(status, 0L);
 		}
+		for (Object[] row : applicationRepository.countApplicationsByStatus(currentUser.getId())) {
+			byStatus.put((ApplicationStatus) row[0], (Long) row[1]);
+		}
+		long total = byStatus.values().stream().mapToLong(Long::longValue).sum();
+		return ApplicationSummaryResponse.builder()
+			.total(total)
+			.byStatus(byStatus)
+			.build();
+	}
 
-		return userService.findByEmailOrThrow(authentication.getName());
+	@Transactional(readOnly = true)
+	public User getAuthenticatedUser() {
+		return currentUserService.get();
+	}
+
+	@Transactional(readOnly = true)
+	public Application getOwnedApplication(Long id) {
+		return findOwnedApplication(id);
 	}
 
 	@Transactional(readOnly = true)
 	protected Application findOwnedApplication(Long id) {
-		User currentUser = getAuthenticatedUser();
-		return applicationRepository.findByIdAndUserId(id, currentUser.getId())
+		return findOwnedApplication(id, getAuthenticatedUser().getId());
+	}
+
+	@Transactional(readOnly = true)
+	protected Application findOwnedApplication(Long id, Long userId) {
+		return applicationRepository.findByIdAndUserId(id, userId)
 			.orElseThrow(() -> new EntityNotFoundException("Application not found: " + id));
 	}
 }

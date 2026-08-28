@@ -1,5 +1,6 @@
 package jobtracker.integration.gmail;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -12,10 +13,22 @@ import jobtracker.repository.ApplicationRepository;
 import jobtracker.service.ApplicationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
 public class EmailParserService {
+
+	private static final int NOTES_MAX_LENGTH = 2000;
+
+	/** Captura palavras com unicode (acentos), números e os caracteres típicos de cargo. */
+	private static final String TOKEN = "[\\p{L}\\p{N}_\\-\\/#\\+]+";
+	/** Palavras de ligação que indicam o fim do cargo ("vaga de Backend aberta na Acme"...). */
+	private static final String STOPWORDS =
+		"na|no|em|de|da|do|para|com|por|aberta|aberto|remoto|presencial|hibrido|híbrido";
+	/** Captura o cargo parando na primeira palavra de ligação (limite de 6 palavras). */
+	private static final String POSITION_GROUP =
+		"(" + TOKEN + "(?:\\s+(?!" + STOPWORDS + "\\b)" + TOKEN + "){0,5})";
 
 	private final ApplicationRepository applicationRepository;
 	private final ApplicationService applicationService;
@@ -23,7 +36,7 @@ public class EmailParserService {
 	public void parseAndProcess(Email email) {
 		String subject = email.getSubject() != null ? email.getSubject() : "";
 		String body = email.getRawContent() != null ? email.getRawContent() : "";
-		String fullText = (subject + " " + body).toLowerCase();
+		String fullText = (subject + " " + body).toLowerCase(Locale.ROOT);
 
 		String companyName = parseCompanyName(subject, body, email.getFromAddress());
 		if (companyName == null || companyName.isBlank()) {
@@ -41,11 +54,19 @@ public class EmailParserService {
 		if (existingAppOpt.isPresent()) {
 			Application existingApp = existingAppOpt.get();
 			if (status != existingApp.getStatus() && status != ApplicationStatus.SAVED) {
+				String autoNote = "[Auto-Sync] Status atualizado baseado no e-mail: " + subject;
+				String combined = StringUtils.hasText(existingApp.getNotes())
+					? existingApp.getNotes() + "\n" + autoNote
+					: autoNote;
+				String newNotes = combined.length() > NOTES_MAX_LENGTH
+					? combined.substring(0, NOTES_MAX_LENGTH - 3) + "..."
+					: combined;
+
 				UpdateApplicationRequest updateRequest = UpdateApplicationRequest.builder()
 					.status(status)
-					.notes(existingApp.getNotes() + "\n[Auto-Sync] Status atualizado baseado no e-mail: " + subject)
+					.notes(newNotes)
 					.build();
-				applicationService.updateApplication(existingApp.getId(), updateRequest);
+				applicationService.updateApplication(existingApp.getId(), updateRequest, email.getUser());
 				email.setApplication(existingApp);
 			} else {
 				email.setApplication(existingApp);
@@ -58,9 +79,9 @@ public class EmailParserService {
 					.status(status)
 					.notes("[Auto-Sync] Candidatura criada automaticamente baseado no e-mail: " + subject)
 					.build();
-				var newAppResponse = applicationService.createApplication(createRequest);
-				
-				Application newApp = applicationRepository.findById(newAppResponse.getId()).orElse(null);
+				var newAppResponse = applicationService.createApplication(createRequest, email.getUser());
+
+				Application newApp = applicationRepository.getReferenceById(newAppResponse.getId());
 				email.setApplication(newApp);
 			}
 		}
@@ -114,12 +135,12 @@ public class EmailParserService {
 
 	private String parsePosition(String subject, String body) {
 		String[] positionPatterns = {
-			"(?i)vaga de\\s+([A-Za-z0-9\\s_\\-\\/#\\+]+)",
-			"(?i)vaga para\\s+([A-Za-z0-9\\s_\\-\\/#\\+]+)",
-			"(?i)cargo de\\s+([A-Za-z0-9\\s_\\-\\/#\\+]+)",
-			"(?i)candidatura para\\s+([A-Za-z0-9\\s_\\-\\/#\\+]+)",
-			"(?i)application for\\s+([A-Za-z0-9\\s_\\-\\/#\\+]+)",
-			"(?i)position:\\s*([A-Za-z0-9\\s_\\-\\/#\\+]+)"
+			"(?i)vaga de\\s+" + POSITION_GROUP,
+			"(?i)vaga para\\s+" + POSITION_GROUP,
+			"(?i)cargo de\\s+" + POSITION_GROUP,
+			"(?i)candidatura para\\s+" + POSITION_GROUP,
+			"(?i)application for\\s+" + POSITION_GROUP,
+			"(?i)position:\\s*" + POSITION_GROUP
 		};
 
 		for (String regex : positionPatterns) {

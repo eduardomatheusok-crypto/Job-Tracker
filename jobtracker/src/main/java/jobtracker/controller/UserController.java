@@ -1,12 +1,10 @@
 package jobtracker.controller;
 
 import jobtracker.dto.user.UserResponse;
-import jobtracker.entity.User;
+import jobtracker.service.CurrentUserService;
 import jobtracker.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
 	private final UserService userService;
+	private final CurrentUserService currentUserService;
 
 	/**
 	 * Retorna as informações de perfil do usuário atualmente autenticado.
@@ -31,12 +30,6 @@ public class UserController {
 	 */
 	@GetMapping("/me")
 	public ResponseEntity<UserResponse> getMyProfile() {
-		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-		if (auth == null || auth.getName() == null) {
-			return ResponseEntity.status(401).build();
-		}
-		
-		User currentUser = userService.findByEmailOrThrow(auth.getName());
-		return ResponseEntity.ok(userService.toResponse(currentUser));
+		return ResponseEntity.ok(userService.toResponse(currentUserService.get()));
 	}
 }

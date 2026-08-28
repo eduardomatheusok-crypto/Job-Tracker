@@ -66,7 +66,7 @@ class JobtrackerIntegrationTests {
 		String aliceToken = loginAndGetToken("alice1@example.com", "password123");
 
 		mockMvc.perform(get("/api/applications"))
-			.andExpect(status().isForbidden());
+			.andExpect(status().isUnauthorized());
 
 		long applicationId = createApplicationAndGetId(aliceToken, """
 			{
@@ -82,8 +82,8 @@ class JobtrackerIntegrationTests {
 		mockMvc.perform(get("/api/applications")
 				.header("Authorization", bearer(aliceToken)))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$", hasSize(1)))
-			.andExpect(jsonPath("$[0].companyName").value("OpenAI"));
+			.andExpect(jsonPath("$.content", hasSize(1)))
+			.andExpect(jsonPath("$.content[0].companyName").value("OpenAI"));
 
 		mockMvc.perform(get("/api/applications/" + applicationId)
 				.header("Authorization", bearer(aliceToken)))
@@ -111,13 +111,66 @@ class JobtrackerIntegrationTests {
 				.header("Authorization", bearer(aliceToken))
 			)
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$", hasSize(0)));
+			.andExpect(jsonPath("$.content", hasSize(0)));
 	}
 
 	@Test
 	void protectedEndpointsShouldRejectRequestsWithoutJwt() throws Exception {
 		mockMvc.perform(get("/api/applications"))
-			.andExpect(status().isForbidden());
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error").value("Unauthorized"))
+			.andExpect(jsonPath("$.message").value("Authentication required"));
+	}
+
+	@Test
+	void errorResponses_useApiErrorEnvelope() throws Exception {
+		register("Alice Error", "alice.error@example.com", "password123");
+		register("Bob Error", "bob.error@example.com", "password123");
+		String aliceToken = loginAndGetToken("alice.error@example.com", "password123");
+		String bobToken = loginAndGetToken("bob.error@example.com", "password123");
+
+		long applicationId = createApplicationAndGetId(aliceToken, """
+			{
+				"companyName":"OpenAI",
+				"position":"Backend Engineer",
+				"status":"APPLIED"
+			}
+			""");
+
+		mockMvc.perform(post("/api/applications")
+				.header("Authorization", bearer(aliceToken))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+						"companyName":"",
+						"position":""
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error").value("Validation Failed"))
+			.andExpect(jsonPath("$.details", hasSize(2)));
+
+		mockMvc.perform(get("/api/applications/" + applicationId)
+				.header("Authorization", bearer(bobToken)))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error").value("Not Found"));
+
+		mockMvc.perform(get("/api/emails/999999")
+				.header("Authorization", bearer(bobToken)))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error").value("Not Found"));
+
+		mockMvc.perform(post("/api/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+						"name":"Alice Error",
+						"email":"alice.error@example.com",
+						"password":"password123"
+					}
+					"""))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error").value("Conflict"));
 	}
 
 	@Test
@@ -332,12 +385,10 @@ class JobtrackerIntegrationTests {
 	}
 
 	@Test
-	void getUserProfile_withoutToken_returnsForbiddenOrUnauthorized() throws Exception {
+	void getUserProfile_withoutToken_returnsUnauthorized() throws Exception {
 		mockMvc.perform(get("/api/users/me"))
-			.andExpect(result ->
-				assertTrue(result.getResponse().getStatus() == 401
-					|| result.getResponse().getStatus() == 403,
-					"Esperado 401 ou 403 mas foi: " + result.getResponse().getStatus()));
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error").value("Unauthorized"));
 	}
 
 	private void register(String name, String email, String password) throws Exception {

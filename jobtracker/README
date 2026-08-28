@@ -1,0 +1,102 @@
+Você vai me ajudar a desenvolver e reconstruir o sistema JobTracker.
+
+REGRAS:
+- Trabalhe em etapas, nunca implemente tudo de uma vez.
+- Primeiro analise o projeto atual antes de alterar qualquer arquivo.
+- NÃO apague, substitua ou faça alterações destrutivas sem minha autorização.
+- NÃO use git reset, git clean ou comandos destrutivos.
+- Antes de cada etapa importante, explique o que fará.
+- Após cada etapa, compile e teste.
+- Se houver erro, pare e corrija antes de continuar.
+- Não invente funcionalidades.
+- Preserve código existente que estiver funcionando.
+- Java 21 + Spring Boot 4.1.1 + PostgreSQL + Maven.
+- JWT e OAuth secrets devem vir da configuração/variáveis de ambiente, nunca do código.
+
+OBJETIVO:
+JobTracker é uma API para gerenciamento de candidaturas de emprego.
+
+Fluxo principal:
+Frontend → REST API → Controller → Service → Repository → PostgreSQL
+
+Autenticação:
+Login → AuthService → Spring Security → JwtService → JWT → JwtAuthenticationFilter
+
+ESTRUTURA:
+controller/
+dto/
+entity/
+integration/gmail/
+repository/
+security/
+service/
+
+FASES:
+
+1. ANÁLISE
+- Analise pom.xml, properties, .env, estrutura, dependências e testes.
+- NÃO altere nada.
+- Informe o que existe, o que falta e os problemas encontrados.
+- Aguarde minha autorização.
+
+2. ENTIDADES
+User, Application, ApplicationHistory, Email, GmailConnection
+Enums: Role, ApplicationStatus.
+
+3. REPOSITORIES
+UserRepository, ApplicationRepository, ApplicationHistoryRepository,
+GmailConnectionRepository.
+
+4. DTOs
+Auth, User e Application DTOs.
+Nunca expor senha ou entidades diretamente.
+
+5. USERS
+Implementar UserService e PasswordEncoder.
+
+6. AUTENTICAÇÃO
+AuthService + AuthController.
+Implementar:
+POST /api/auth/register
+POST /api/auth/login
+
+7. SECURITY + JWT
+Implementar SecurityConfig, UserDetailsConfig,
+JwtAuthenticationFilter e JwtService.
+API STATELESS.
+/api/auth/** público.
+Demais endpoints protegidos.
+
+8. APPLICATIONS
+Implementar ApplicationService e ApplicationController:
+POST /api/applications
+GET /api/applications
+GET /api/applications/{id}
+PUT /api/applications/{id}
+DELETE /api/applications/{id}
+
+Usuário só pode acessar suas próprias candidaturas.
+
+9. HISTÓRICO
+Registrar mudanças importantes nas candidaturas e status.
+
+10. TESTES
+Testar registro, login, JWT, segurança, candidaturas e isolamento entre usuários.
+
+11. GMAIL
+Somente depois do núcleo estar funcionando:
+OAuth → GmailConnection → GmailService → EmailParserService.
+
+PRIMEIRA AÇÃO:
+NÃO escreva código.
+
+Analise o projeto atual e me informe:
+- estrutura;
+- Java/Spring Boot;
+- dependências;
+- banco;
+- JWT;
+- arquivos existentes;
+- problemas.
+
+Depois apresente o plano da próxima etapa e aguarde minha autorização.

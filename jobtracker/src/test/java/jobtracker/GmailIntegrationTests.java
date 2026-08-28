@@ -148,15 +148,12 @@ class GmailIntegrationTests {
 	}
 
 	// -----------------------------------------------------------------------
-	// Teste 2: GET /api/gmail/auth-url sem JWT – deve retornar 401/403
+	// Teste 2: GET /api/gmail/auth-url sem JWT – deve retornar 401
 	// -----------------------------------------------------------------------
 	@Test
 	void getAuthUrl_withoutJwt_returnsUnauthorized() throws Exception {
 		mockMvc.perform(get("/api/gmail/auth-url"))
-			.andExpect(result ->
-				assertTrue(result.getResponse().getStatus() == 401
-					|| result.getResponse().getStatus() == 403,
-					"Esperado 401 ou 403 mas foi: " + result.getResponse().getStatus()));
+			.andExpect(status().isUnauthorized());
 	}
 
 	// -----------------------------------------------------------------------
