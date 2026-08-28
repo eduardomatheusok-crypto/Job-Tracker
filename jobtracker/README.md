@@ -18,7 +18,7 @@ A ideia do projeto tem três pilares:
 - [x] Sincronização automática (agendada) e resumo de resultados por status
 - [x] Endpoints de histórico de candidatura e consulta de e-mails
 - [x] Extensão de navegador (Manifest V3, Vanilla JS) — pasta `extension/`
-- [ ] Frontend
+- [x] Frontend (React + TypeScript) — pasta `frontend/`
 
 ## Stack
 
@@ -74,7 +74,7 @@ Subir um PostgreSQL, preencher as variáveis de ambiente e rodar:
 | `GOOGLE_CLIENT_SECRET` | sim* | Client Secret do app Google OAuth (*necessária para Gmail) |
 | `GOOGLE_REDIRECT_URI` | não | Redirect URI do OAuth (default `http://localhost:8080/api/gmail/callback`) |
 | `ENCRYPTION_KEY` | sim | Chave de criptografia dos tokens OAuth (AES-GCM) |
-| `APP_FRONTEND_URL` | não | URL do frontend para redirecionamento pós-callback Gmail |
+| `CORS_ALLOWED_ORIGINS` | não | Origens permitidas no CORS (separadas por vírgula; vazio = libera tudo) |
 | `GMAIL_SYNC_ENABLED` | não | Liga/desliga o sync agendado do Gmail (default `true`) |
 | `GMAIL_SYNC_INITIAL_DELAY_MS` | não | Atraso inicial do job agendado (default `60000`) |
 | `GMAIL_SYNC_FIXED_DELAY_MS` | não | Intervalo da sincronização automática (default `3600000`) |
@@ -149,6 +149,25 @@ Para instalar e usar, veja o [`extension/README.md`](extension/README.md).
 
 A extensão (MV3, Vanilla JS) captura os dados da página da vaga — empresa, cargo, localização, link e plataforma — via JSON-LD, meta tags e seletores específicos (LinkedIn, Indeed, Gupy, Greenhouse, Workable...), exibe num popup para revisão e salva na API com o JWT do usuário.
 
+## Frontend
+
+A interface web fica em [`frontend/`](frontend/README.md) (Vite + React + TypeScript + Tailwind CSS + React Router).
+
+Para rodar local:
+
+```bash
+cd frontend
+cp .env.example .env   # ajuste VITE_API_URL (default http://localhost:8080)
+npm install
+npm run dev
+```
+
+Build de produção:
+
+```bash
+npm run build   # gera frontend/dist
+```
+
 ## Próximos passos
 
-1. Frontend (React/TypeScript).
+1. Configurar o deploy: frontend na Vercel (pasta `frontend`, build `npm run build`, saída `dist`) e backend no Render (perfil `prod`, com `CORS_ALLOWED_ORIGINS` apontando para o domínio do frontend).
