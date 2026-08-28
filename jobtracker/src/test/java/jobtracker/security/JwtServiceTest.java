@@ -29,7 +29,9 @@ class JwtServiceTest {
 
 		String token = jwtService.generateToken(Map.of("userId", 42L), "alice@example.com");
 
-		assertEquals(42L, jwtService.extractClaim(token, claims -> claims.get("userId", Long.class)));
+		Long userId = jwtService.extractClaim(token, claims -> claims.get("userId", Long.class));
+
+		assertEquals(42L, userId);
 	}
 
 	@Test

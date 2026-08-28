@@ -32,3 +32,8 @@ build/
 ### VS Code ###
 .vscode/
 /postgres-data/
+
+### Environment ###
+.env
+.env.local
+.env.*.local
