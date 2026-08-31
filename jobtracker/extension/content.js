@@ -5,6 +5,7 @@
 		if (message && message.type === "jt:capture") {
 			sendResponse({ data: captureJobData() });
 		}
+		return true;
 	});
 
 	function captureJobData() {
@@ -13,7 +14,7 @@
 		const ogSiteName = metaContent('meta[property="og:site_name"]');
 
 		const position = firstNonEmpty(
-			textOf(jsonLd.title),
+			jsonLd.title,
 			textOf(selectFirst(POSITION_SELECTORS)),
 			textOf(selectFirst(["h1"])),
 			cutSuffix(ogTitle)
@@ -21,11 +22,11 @@
 
 		const companyName = firstNonEmpty(
 			jsonLd.hiringOrganization,
-			textOf(metaContent('meta[property="og:site_name"]')),
+			ogSiteName,
 			textOf(selectFirst(COMPANY_SELECTORS))
 		);
 
-		const location = firstNonEmpty(
+		const jobLocation = firstNonEmpty(
 			jsonLd.location,
 			textOf(selectFirst(LOCATION_SELECTORS))
 		);
@@ -33,9 +34,9 @@
 		return {
 			position: clean(position),
 			companyName: clean(companyName),
-			location: clean(location),
-			jobUrl: clean(location.href),
-			platform: detectPlatform(location.hostname)
+			location: clean(jobLocation),
+			jobUrl: clean(window.location.href),
+			platform: detectPlatform(window.location.hostname)
 		};
 	}
 
@@ -69,7 +70,7 @@
 		for (const script of scripts) {
 			let parsed;
 			try {
-				parsed = JSON.parse(script.textContent || scripts.textContent || "");
+				parsed = JSON.parse(script.textContent || "");
 			} catch (e) {
 				continue;
 			}

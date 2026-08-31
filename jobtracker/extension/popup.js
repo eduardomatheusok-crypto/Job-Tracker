@@ -116,11 +116,26 @@
 		els.saveMessage.textContent = "";
 		els.saveMessage.className = "message";
 
-		chrome.runtime.sendMessage({ type: "capture" }).then((data) => {
-			if (data && !data.error) {
-				fill(data);
-			}
+		waitForCapture(6, 400).then((result) => {
+			const cls = result.type === "success" ? "success" : "warn";
+			els.saveMessage.textContent = result.message;
+			els.saveMessage.className = "message " + cls;
 		});
+	}
+
+	async function waitForCapture(attempts, delayMs) {
+		for (let i = 0; i < attempts; i++) {
+			const data = await chrome.runtime.sendMessage({ type: "capture" });
+			if (data && data.error) {
+				return { type: "warn", message: data.error };
+			}
+			if (data && !data.empty) {
+				fill(data);
+				return { type: "success", message: "✓ Dados detectados da página. Revise antes de salvar." };
+			}
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+		}
+		return { type: "warn", message: "Não foi possível detectar a vaga automaticamente. Preencha manualmente." };
 	}
 
 	function fill(data) {

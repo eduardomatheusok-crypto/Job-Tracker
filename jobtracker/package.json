@@ -1,0 +1,9 @@
+{
+  "name": "jobtracker-extension-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Testes da extensão JobTracker Capture (executados com Node puro, sem dependências)",
+  "scripts": {
+    "test": "node tests/test-capture.js && node tests/test-flow.js"
+  }
+}

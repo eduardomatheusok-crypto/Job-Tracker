@@ -62,12 +62,22 @@ async function handle(message) {
 			if (!tab || tab.id === undefined) {
 				return { error: "Nenhuma aba aberta" };
 			}
-			try {
-				const response = await chrome.tabs.sendMessage(tab.id, { type: "jt:capture" });
-				return response && response.data ? response.data : null;
-			} catch (e) {
-				return null;
+			if (!canInject(tab.url)) {
+				return {
+					error: "Não foi possível ler dados nesta página (página restrita do navegador). Preencha manualmente."
+				};
 			}
+
+			let captured = await messageContentScript(tab);
+			if (captured === null) {
+				captured = await injectAndCapture(tab);
+			}
+
+			if (captured && (captured.position || captured.companyName)) {
+				return captured;
+			}
+
+			return { empty: true };
 		}
 
 		case "save": {
@@ -93,6 +103,35 @@ async function handle(message) {
 
 		default:
 			return { ok: false, message: "Mensagem desconhecida" };
+	}
+}
+
+function canInject(url) {
+	if (!url) {
+		return false;
+	}
+	return /^(https?|file|ftp):\/\//i.test(url);
+}
+
+async function messageContentScript(tab) {
+	try {
+		const response = await chrome.tabs.sendMessage(tab.id, { type: "jt:capture" });
+		return response && response.data ? response.data : null;
+	} catch (e) {
+		return null;
+	}
+}
+
+async function injectAndCapture(tab) {
+	try {
+		await chrome.scripting.executeScript({
+			target: { tabId: tab.id },
+			files: ["content.js"]
+		});
+		const response = await chrome.tabs.sendMessage(tab.id, { type: "jt:capture" });
+		return response && response.data ? response.data : null;
+	} catch (e) {
+		return null;
 	}
 }
 
