@@ -341,7 +341,6 @@ function HistoryCard({ history }: { history: ApplicationHistoryItem[] }) {
                 ) : null}
                 <StatusBadge status={item.newStatus} />
               </div>
-              <p className="mt-1 text-sm text-slate-600">{item.note || '—'}</p>
             </li>
           ))}
         </ol>

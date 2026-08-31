@@ -320,11 +320,11 @@ class JobtrackerIntegrationTests {
 	}
 
 	@Test
-	void applicationHistoryShouldBeRecordedOnCreationAndUpdate() throws Exception {
+	void applicationHistoryShouldBeRecordedOnlyOnStatusChange() throws Exception {
 		register("Alice Example", "alice@example.com", "password123");
 		String token = loginAndGetToken("alice@example.com", "password123");
 
-		// 1. Criação de candidatura
+		// 1. Criação de candidatura NÃO gera registro de histórico
 		long applicationId = createApplicationAndGetId(token, """
 			{
 				"companyName":"Netflix",
@@ -333,18 +333,26 @@ class JobtrackerIntegrationTests {
 			}
 			""");
 
-		// Verifica que o histórico registrou a criação
 		List<ApplicationHistory> historyAfterCreation = applicationHistoryRepository.findByApplicationIdOrderByChangedAtDesc(applicationId);
-		assertEquals(1, historyAfterCreation.size());
-		ApplicationHistory creationRecord = historyAfterCreation.get(0);
-		assertEquals(ApplicationStatus.SAVED, creationRecord.getNewStatus());
-		assertEquals("created", creationRecord.getChangedField());
-		assertEquals("Application created", creationRecord.getNote());
-		assertNotNull(creationRecord.getChangedByUser());
-		User creationUser = userRepository.findById(creationRecord.getChangedByUser().getId()).orElseThrow();
-		assertEquals("alice@example.com", creationUser.getEmail());
+		assertEquals(0, historyAfterCreation.size());
 
-		// 2. Atualização de status da candidatura
+		// 2. Atualização de campos sem mudança de status NÃO gera histórico
+		mockMvc.perform(put("/api/applications/" + applicationId)
+				.header("Authorization", bearer(token))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+						"companyName":"Netflix Brasil",
+						"position":"Fullstack Developer Senior",
+						"status":"SAVED"
+					}
+					"""))
+			.andExpect(status().isOk());
+
+		List<ApplicationHistory> historyAfterFieldUpdate = applicationHistoryRepository.findByApplicationIdOrderByChangedAtDesc(applicationId);
+		assertEquals(0, historyAfterFieldUpdate.size());
+
+		// 3. Mudança de status gera um único registro de histórico
 		mockMvc.perform(put("/api/applications/" + applicationId)
 				.header("Authorization", bearer(token))
 				.contentType(MediaType.APPLICATION_JSON)
@@ -356,16 +364,12 @@ class JobtrackerIntegrationTests {
 					"""))
 			.andExpect(status().isOk());
 
-		// Verifica que o histórico registrou a alteração
 		List<ApplicationHistory> historyAfterUpdate = applicationHistoryRepository.findByApplicationIdOrderByChangedAtDesc(applicationId);
-		assertEquals(2, historyAfterUpdate.size());
-		
-		// O registro mais recente (índice 0, ordenado descendente) deve ser o update
+		assertEquals(1, historyAfterUpdate.size());
+
 		ApplicationHistory updateRecord = historyAfterUpdate.get(0);
 		assertEquals(ApplicationStatus.SAVED, updateRecord.getPreviousStatus());
 		assertEquals(ApplicationStatus.INTERVIEW, updateRecord.getNewStatus());
-		assertTrue(updateRecord.getChangedField().contains("status"));
-		assertTrue(updateRecord.getChangedField().contains("notes"));
 		assertNotNull(updateRecord.getChangedByUser());
 		User updateUser = userRepository.findById(updateRecord.getChangedByUser().getId()).orElseThrow();
 		assertEquals("alice@example.com", updateUser.getEmail());

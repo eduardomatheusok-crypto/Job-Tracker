@@ -63,7 +63,6 @@ public class ApplicationService {
 		}
 
 		Application savedApplication = applicationRepository.save(application);
-		applicationHistoryService.recordCreation(savedApplication, owner);
 		return toResponse(savedApplication);
 	}
 
@@ -110,7 +109,7 @@ public class ApplicationService {
 		}
 
 		Application savedApplication = applicationRepository.save(application);
-		if (!changedFields.isEmpty()) {
+		if (savedApplication.getStatus() != previousStatus) {
 			applicationHistoryService.recordUpdate(
 				savedApplication,
 				actor,

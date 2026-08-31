@@ -62,7 +62,7 @@ class HistoryAndEmailIntegrationTests {
 	}
 
 	@Test
-	void historyEndpoint_returnsCreationAndUpdateRecordsForOwnedApplication() throws Exception {
+	void historyEndpoint_returnsStatusChangeRecordForOwnedApplication() throws Exception {
 		String token = registerAndLogin("alice.history@example.com");
 
 		long applicationId = createApplication(token, """
@@ -87,12 +87,10 @@ class HistoryAndEmailIntegrationTests {
 		mockMvc.perform(get("/api/applications/" + applicationId + "/history")
 				.header("Authorization", bearer(token)))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$", hasSize(2)))
+			.andExpect(jsonPath("$", hasSize(1)))
 			.andExpect(jsonPath("$[0].previousStatus").value("SAVED"))
 			.andExpect(jsonPath("$[0].newStatus").value("INTERVIEW"))
-			.andExpect(jsonPath("$[0].applicationId").value(applicationId))
-			.andExpect(jsonPath("$[1].newStatus").value("SAVED"))
-			.andExpect(jsonPath("$[1].changedField").value("created"));
+			.andExpect(jsonPath("$[0].applicationId").value(applicationId));
 	}
 
 	@Test
