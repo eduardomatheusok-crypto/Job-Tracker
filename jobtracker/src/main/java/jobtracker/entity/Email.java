@@ -50,7 +50,7 @@ public class Email {
 	@Column(length = 2000)
 	private String snippet;
 
-	@Column(length = 20000)
+	@Column(columnDefinition = "TEXT")
 	private String rawContent;
 
 	@Column(nullable = false)
