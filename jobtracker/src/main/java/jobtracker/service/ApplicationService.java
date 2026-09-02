@@ -58,7 +58,9 @@ public class ApplicationService {
 			.status(request.getStatus() != null ? request.getStatus() : ApplicationStatus.SAVED)
 			.build();
 
-		if (application.getStatus() == ApplicationStatus.APPLIED && application.getAppliedAt() == null) {
+		if (request.getAppliedAt() != null) {
+			application.setAppliedAt(request.getAppliedAt());
+		} else if (application.getStatus() == ApplicationStatus.APPLIED && application.getAppliedAt() == null) {
 			application.setAppliedAt(Instant.now());
 		}
 

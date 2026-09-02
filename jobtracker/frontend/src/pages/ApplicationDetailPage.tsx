@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { StatusBadge } from '../components/StatusBadge.tsx'
-import { ApiError, api } from '../lib/api.ts'
+import { ApiError, api, cachedApi } from '../lib/api.ts'
 import { formatDate, formatDateTime } from '../lib/date.ts'
 import { STATUS_META, STATUS_ORDER } from '../lib/status.ts'
 import type { Application, ApplicationHistoryItem, ApplicationStatus, Email, UpdateApplicationRequest } from '../lib/types.ts'
@@ -44,9 +44,9 @@ export function ApplicationDetailPage() {
     setError(null)
     try {
       const [appData, historyData, emailsData] = await Promise.all([
-        api<Application>(`/api/applications/${applicationId}`),
-        api<ApplicationHistoryItem[]>(`/api/applications/${applicationId}/history`),
-        api<{ content: Email[] }>(`/api/emails?applicationId=${applicationId}&size=200`),
+        cachedApi<Application>(`/api/applications/${applicationId}`),
+        cachedApi<ApplicationHistoryItem[]>(`/api/applications/${applicationId}/history`),
+        cachedApi<{ content: Email[] }>(`/api/emails?applicationId=${applicationId}&size=200`),
       ])
       setApp(appData)
       setHistory(historyData)

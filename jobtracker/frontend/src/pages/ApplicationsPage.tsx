@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, Loader2, Plus, Search, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { ApiError, api } from '../lib/api.ts'
+import { ApiError, api, cachedApi } from '../lib/api.ts'
 import { formatDate } from '../lib/date.ts'
 import { STATUS_META, STATUS_ORDER } from '../lib/status.ts'
 import type { Application, ApplicationRequest, ApplicationStatus, ApplicationSummary, Page } from '../lib/types.ts'
@@ -41,8 +41,8 @@ export function ApplicationsPage() {
     setError(null)
     try {
       const [summaryData, pageData] = await Promise.all([
-        api<ApplicationSummary>('/api/applications/summary'),
-        api<Page<Application>>(`/api/applications?page=${page}&size=${PAGE_SIZE}`),
+        cachedApi<ApplicationSummary>('/api/applications/summary'),
+        cachedApi<Page<Application>>(`/api/applications?page=${page}&size=${PAGE_SIZE}`),
       ])
       setSummary(summaryData)
       setApplications(pageData.content)

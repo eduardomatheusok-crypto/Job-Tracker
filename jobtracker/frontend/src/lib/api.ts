@@ -98,3 +98,35 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
   return (await response.json()) as T
 }
+
+const cache = new Map<string, { data: unknown; expiresAt: number }>()
+const CACHE_TTL_MS = 30_000
+
+function cacheKey(path: string): string {
+  return `${API_URL}${path}`
+}
+
+export async function prefetch<T>(path: string, ttlMs = CACHE_TTL_MS): Promise<void> {
+  const token = getToken()
+  if (!token) return
+  const key = cacheKey(path)
+  if (cache.has(key) && cache.get(key)!.expiresAt > Date.now()) return
+  try {
+    const data = await api<T>(path)
+    cache.set(key, { data, expiresAt: Date.now() + ttlMs })
+  } catch {
+    // prefetch silencioso: falha não bloqueia a navegação
+  }
+}
+
+export async function cachedApi<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const key = cacheKey(path)
+  if (options.method === undefined && cache.has(key) && cache.get(key)!.expiresAt > Date.now()) {
+    return cache.get(key)!.data as T
+  }
+  const data = await api<T>(path, options)
+  if (options.method === undefined) {
+    cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS })
+  }
+  return data
+}

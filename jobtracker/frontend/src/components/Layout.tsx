@@ -1,10 +1,11 @@
 import { Briefcase, LogOut, Mail } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth.tsx'
+import { prefetch } from '../lib/api.ts'
 
 const NAV_LINKS = [
-  { to: '/applications', label: 'Candidaturas', icon: Briefcase },
-  { to: '/gmail', label: 'Gmail', icon: Mail },
+  { to: '/applications', label: 'Candidaturas', icon: Briefcase, prefetches: ['/api/applications/summary', '/api/applications?page=0&size=20'] },
+  { to: '/gmail', label: 'Gmail', icon: Mail, prefetches: ['/api/gmail/status'] },
 ]
 
 export default function Layout() {
@@ -13,6 +14,12 @@ export default function Layout() {
 
   const handleLogout = () => {
     void logout().then(() => navigate('/login', { replace: true }))
+  }
+
+  const handlePrefetch = (link: (typeof NAV_LINKS)[number]) => {
+    for (const path of link.prefetches) {
+      void prefetch(path)
+    }
   }
 
   return (
@@ -26,22 +33,27 @@ export default function Layout() {
         </div>
 
         <nav className="mt-2 flex-1 space-y-1 px-3">
-          {NAV_LINKS.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-indigo-500 text-white'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`
-              }
-            >
-              <Icon className="size-4.5" />
-              {label}
-            </NavLink>
-          ))}
+          {NAV_LINKS.map((link) => {
+            const { icon: Icon } = link
+            return (
+              <NavLink
+                key={link.to}
+                to={link.to}
+                onMouseEnter={() => handlePrefetch(link)}
+                onFocus={() => handlePrefetch(link)}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-indigo-500 text-white'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`
+                }
+              >
+                <Icon className="size-4.5" />
+                {link.label}
+              </NavLink>
+            )
+          })}
         </nav>
 
         <div className="border-t border-slate-800 px-5 py-4">

@@ -2,6 +2,7 @@ package jobtracker.dto.application;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
 import jobtracker.entity.ApplicationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -37,4 +38,6 @@ public class ApplicationRequest {
 	private String notes;
 
 	private ApplicationStatus status;
+
+	private Instant appliedAt;
 }

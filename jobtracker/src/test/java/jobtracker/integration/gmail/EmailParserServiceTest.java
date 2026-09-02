@@ -20,6 +20,7 @@ import jobtracker.entity.Email;
 import jobtracker.entity.EmailDirection;
 import jobtracker.entity.User;
 import jobtracker.repository.ApplicationRepository;
+import jobtracker.repository.EmailRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import jobtracker.service.ApplicationService;
@@ -27,8 +28,9 @@ import jobtracker.service.ApplicationService;
 class EmailParserServiceTest {
 
 	private final ApplicationRepository applicationRepository = mock(ApplicationRepository.class);
+	private final EmailRepository emailRepository = mock(EmailRepository.class);
 	private final ApplicationService applicationService = mock(ApplicationService.class);
-	private final EmailParserService emailParserService = new EmailParserService(applicationRepository, applicationService);
+	private final EmailParserService emailParserService = new EmailParserService(applicationRepository, emailRepository, applicationService);
 
 	@Test
 	void parseAndProcess_createsApplicationWhenNoMatchExists() {
@@ -97,7 +99,8 @@ class EmailParserServiceTest {
 		when(existingApp.getStatus()).thenReturn(ApplicationStatus.APPLIED);
 		when(existingApp.getNotes()).thenReturn("");
 
-		when(applicationRepository.findAllByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of(existingApp));
+		when(applicationRepository.findFirstByUserIdAndCompanyNameIgnoreCaseOrderByCreatedAtDesc(1L, "Acme Corp"))
+			.thenReturn(java.util.Optional.of(existingApp));
 
 		Email email = Email.builder()
 			.user(user)
