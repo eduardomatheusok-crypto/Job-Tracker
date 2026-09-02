@@ -140,11 +140,21 @@ async function apiFetch(apiUrl, path, { method = "GET", token, body } = {}) {
 	if (token) {
 		headers["Authorization"] = "Bearer " + token;
 	}
-	const response = await fetch(apiUrl + path, {
-		method,
-		headers,
-		body: body !== undefined ? JSON.stringify(body) : undefined
-	});
+
+	let response;
+	try {
+		response = await fetch(apiUrl + path, {
+			method,
+			headers,
+			body: body !== undefined ? JSON.stringify(body) : undefined
+		});
+	} catch (error) {
+		// "Failed to fetch" (rede/CORS) — transforma em mensagem acionável.
+		throw new Error(
+			"Não foi possível acessar a API em " + (apiUrl || "?") +
+			". Verifique a URL do backend e se o CORS da API aceita a extensão."
+		);
+	}
 
 	let data = null;
 	const text = await response.text();

@@ -99,10 +99,15 @@ public class SecurityConfig {
 		if (allowedOrigins == null || allowedOrigins.isBlank()) {
 			configuration.addAllowedOriginPattern("*");
 		} else {
+			// Origens explícitas configuradas (ex.: frontend hospedado).
 			Arrays.stream(allowedOrigins.split(","))
 				.map(String::trim)
 				.filter(origin -> !origin.isBlank())
-				.forEach(configuration::addAllowedOrigin);
+				.forEach(configuration::addAllowedOriginPattern);
+			// A extensão do navegador (chrome-extension://<id>) tem origem dinâmica e
+			// não pode ser listada estaticamente. Sempre a liberamos para que o
+			// fetch do service worker da extensão não seja bloqueado por CORS.
+			configuration.addAllowedOriginPattern("chrome-extension://*");
 		}
 		configuration.addAllowedHeader("*");
 		configuration.addAllowedMethod("*");
