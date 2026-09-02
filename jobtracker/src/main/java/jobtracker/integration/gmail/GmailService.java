@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import jobtracker.entity.Email;
+import jobtracker.entity.EmailDirection;
 import jobtracker.entity.GmailConnection;
 import jobtracker.entity.User;
 import jobtracker.repository.EmailRepository;
@@ -37,7 +38,10 @@ public class GmailService {
 
 	private static final Logger log = LoggerFactory.getLogger(GmailService.class);
 
-	private static final String SEARCH_QUERY = "subject:(candidatura OR vaga OR \"processo seletivo\" OR entrevista OR \"application\" OR interview)";
+	private static final String SEARCH_QUERY =
+		"subject:(candidatura OR vaga OR \"processo seletivo\" OR entrevista OR \"application\" OR interview) "
+			+ "-from:(render.com OR vercel.com OR netlify.com OR github.com OR gitlab.com OR digitalocean.com OR "
+			+ "heroku.com OR aws.amazon.com OR mailchimp.com OR sendgrid.net OR statuspage.io)";
 
 	@Value("${google.client-id}")
 	private String clientId;
@@ -124,6 +128,8 @@ public class GmailService {
 
 				String subject = getHeader(msg, "Subject");
 				String from = getHeader(msg, "From");
+				String to = getHeader(msg, "To");
+				boolean sent = msg.getLabelIds() != null && msg.getLabelIds().contains("SENT");
 				Instant receivedAt = msg.getInternalDate() != null
 					? Instant.ofEpochMilli(msg.getInternalDate())
 					: Instant.now();
@@ -132,8 +138,10 @@ public class GmailService {
 				emailSyncProcessor.process(
 					userId,
 					messageId,
+					sent ? EmailDirection.SENT : EmailDirection.INBOUND,
 					subject,
 					from,
+					to,
 					msg.getSnippet(),
 					rawContent,
 					receivedAt

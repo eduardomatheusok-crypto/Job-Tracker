@@ -1,5 +1,6 @@
 package jobtracker.integration.gmail;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -9,6 +10,7 @@ import jobtracker.dto.application.UpdateApplicationRequest;
 import jobtracker.entity.Application;
 import jobtracker.entity.ApplicationStatus;
 import jobtracker.entity.Email;
+import jobtracker.entity.EmailDirection;
 import jobtracker.repository.ApplicationRepository;
 import jobtracker.service.ApplicationService;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,28 @@ import org.springframework.util.StringUtils;
 public class EmailParserService {
 
 	private static final int NOTES_MAX_LENGTH = 2000;
+
+	/** Domínios de serviços/plataformas que nunca devem virar candidatura. */
+	private static final List<String> NON_RECRUITING_DOMAINS = List.of(
+		"gmail", "yahoo", "outlook", "hotmail", "gupy", "greenhouse", "linkedin",
+		"render", "vercel", "netlify", "github", "gitlab", "bitbucket", "digitalocean",
+		"heroku", "aws.amazon", "cloudflare", "sendgrid", "mailchimp", "statuspage"
+	);
+
+	/** Sinais de que o e-mail realmente trata de recrutamento (usado no fallback por domínio). */
+	private static final List<String> RECRUITING_SIGNALS = List.of(
+		"candidatura", "candidatar", "candidatar-se",
+		"vaga", "vagas", "processo seletivo", "entrevista", "entrevistas",
+		"recrutamento", "recruiting", "inscrição", "inscricao",
+		"pré-selecionado", "pré selecionado", "pré-seleção", "pré seleção",
+		"hiring", "talent", "career", "job offer", "offer letter", "carta de oferta",
+		"proposta", "contratação", "contratacao", "join our team",
+		"thank you for applying", "you applied", "your application",
+		"application received", "application at", "application for",
+		"submitted your application", "welcome to the hiring process",
+		"selection process", "job posting", "position",
+		"opportunity", "emprego"
+	);
 
 	/** Captura palavras com unicode (acentos), números e os caracteres típicos de cargo. */
 	private static final String TOKEN = "[\\p{L}\\p{N}_\\-\\/#\\+]+";
@@ -38,7 +62,10 @@ public class EmailParserService {
 		String body = email.getRawContent() != null ? email.getRawContent() : "";
 		String fullText = (subject + " " + body).toLowerCase(Locale.ROOT);
 
-		String companyName = parseCompanyName(subject, body, email.getFromAddress());
+		boolean sent = email.getDirection() == EmailDirection.SENT;
+		String contactAddress = sent ? email.getToAddress() : email.getFromAddress();
+
+		String companyName = parseCompanyName(subject, body, contactAddress);
 		if (companyName == null || companyName.isBlank()) {
 			return;
 		}
@@ -87,7 +114,7 @@ public class EmailParserService {
 		}
 	}
 
-	private String parseCompanyName(String subject, String body, String fromAddress) {
+	private String parseCompanyName(String subject, String body, String contactAddress) {
 		String[] subjectPatterns = {
 			"(?i)candidatura na\\s+([A-Za-z0-9\\s_\\-]+)",
 			"(?i)vaga na\\s+([A-Za-z0-9\\s_\\-]+)",
@@ -107,11 +134,12 @@ public class EmailParserService {
 			}
 		}
 
-		if (fromAddress != null && fromAddress.contains("@")) {
-			String domain = fromAddress.substring(fromAddress.indexOf("@") + 1);
+		if (contactAddress != null && contactAddress.contains("@")) {
+			String domain = contactAddress.substring(contactAddress.indexOf("@") + 1);
 			domain = domain.replaceAll("(?i)\\.(com|com\\.br|net|org|io|co|tech|dev|ai)$", "").trim();
-			if (!domain.equalsIgnoreCase("gmail") && !domain.equalsIgnoreCase("yahoo") && !domain.equalsIgnoreCase("outlook")
-				&& !domain.equalsIgnoreCase("gupy") && !domain.equalsIgnoreCase("greenhouse") && !domain.equalsIgnoreCase("linkedin")) {
+			String effectiveDomain = domain.toLowerCase(Locale.ROOT);
+			boolean blocked = NON_RECRUITING_DOMAINS.stream().anyMatch(d -> effectiveDomain.startsWith(d));
+			if (!blocked && hasRecruitingSignal(subject, body)) {
 				return capitalize(domain);
 			}
 		}
@@ -183,6 +211,11 @@ public class EmailParserService {
 		}
 
 		return ApplicationStatus.APPLIED;
+	}
+
+	private boolean hasRecruitingSignal(String subject, String body) {
+		String fullText = (subject + " " + body).toLowerCase(Locale.ROOT);
+		return RECRUITING_SIGNALS.stream().anyMatch(fullText::contains);
 	}
 
 	private String capitalize(String str) {

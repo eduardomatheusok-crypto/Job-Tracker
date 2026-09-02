@@ -2,6 +2,8 @@ package jobtracker.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -41,11 +43,18 @@ public class Email {
 	@Column(nullable = false, length = 255)
 	private String messageId;
 
+	@Column(nullable = false)
+	@Enumerated(EnumType.STRING)
+	private EmailDirection direction;
+
 	@Column(length = 500)
 	private String subject;
 
 	@Column(length = 255)
 	private String fromAddress;
+
+	@Column(length = 255)
+	private String toAddress;
 
 	@Column(length = 2000)
 	private String snippet;
@@ -65,6 +74,9 @@ public class Email {
 	@PrePersist
 	void prePersist() {
 		final Instant now = Instant.now();
+		if (direction == null) {
+			direction = EmailDirection.INBOUND;
+		}
 		if (receivedAt == null) {
 			receivedAt = now;
 		}

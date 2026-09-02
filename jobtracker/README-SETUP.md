@@ -2,22 +2,8 @@
 
 Projeto com 3 módulos: **backend** (Java/Spring Boot, pasta `jobtracker/`), **frontend** (React/Vite, pasta `jobtracker/frontend/`) e **extensão Chrome** (pasta `jobtracker/extension/`).
 
-## 1. Pré-requisitos
-
-| Ferramenta | Versão | Uso |
-|---|---|---|
-| JDK | 21 | Backend |
-| Maven | 3.9.x (wrapper incluso: `mvnw`/`mvnw.cmd`) | Backend |
-| Node.js + npm | 20+ | Frontend |
-| Docker Desktop **ou** PostgreSQL | 16 | Banco de dados |
-
 Portas livres: **8080** (backend) e **5432** (postgres).
 
-## 2. Clone
-
-```bash
-git clone <url-do-repo> jobtracker
-```
 
 ## 3. Backend
 

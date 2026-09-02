@@ -1,6 +1,7 @@
 package jobtracker.dto.email;
 
 import java.time.Instant;
+import jobtracker.entity.EmailDirection;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -18,8 +19,10 @@ public class EmailResponse {
 	private Long userId;
 	private Long applicationId;
 	private String messageId;
+	private EmailDirection direction;
 	private String subject;
 	private String fromAddress;
+	private String toAddress;
 	private String snippet;
 	private String rawContent;
 	private Instant receivedAt;

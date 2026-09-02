@@ -17,6 +17,7 @@ import jobtracker.dto.application.UpdateApplicationRequest;
 import jobtracker.entity.Application;
 import jobtracker.entity.ApplicationStatus;
 import jobtracker.entity.Email;
+import jobtracker.entity.EmailDirection;
 import jobtracker.entity.User;
 import jobtracker.repository.ApplicationRepository;
 import org.junit.jupiter.api.Test;
@@ -113,5 +114,94 @@ class EmailParserServiceTest {
 			.createApplication(any(ApplicationRequest.class), any(User.class));
 		assertNotNull(email.getApplication());
 		assertEquals(5L, email.getApplication().getId());
+	}
+
+	@Test
+	void parseAndProcess_ignoresInfraPlatformEmail() {
+		User user = mock(User.class);
+		when(user.getId()).thenReturn(1L);
+		when(applicationRepository.findAllByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of());
+
+		Email email = Email.builder()
+			.user(user)
+			.subject("Your application failed to deploy")
+			.rawContent("The build for your service failed on Render Atlas.")
+			.fromAddress("noreply@render.com")
+			.build();
+
+		emailParserService.parseAndProcess(email);
+
+		verify(applicationService, never())
+			.createApplication(any(ApplicationRequest.class), any(User.class));
+		verify(applicationService, never())
+			.updateApplication(anyLong(), any(UpdateApplicationRequest.class), any(User.class));
+	}
+
+	@Test
+	void parseAndProcess_ignoresEmailWithoutRecruitingSignal() {
+		User user = mock(User.class);
+		when(user.getId()).thenReturn(1L);
+		when(applicationRepository.findAllByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of());
+
+		Email email = Email.builder()
+			.user(user)
+			.subject("Application status update")
+			.rawContent("Your hosted application was restarted. Everything is running normally.")
+			.fromAddress("noreply@operations.io")
+			.build();
+
+		emailParserService.parseAndProcess(email);
+
+		verify(applicationService, never())
+			.createApplication(any(ApplicationRequest.class), any(User.class));
+	}
+
+	@Test
+	void parseAndProcess_sentEmailCreatesApplicationFromRecipient() {
+		User user = mock(User.class);
+		when(user.getId()).thenReturn(1L);
+		when(applicationRepository.findAllByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of());
+
+		when(applicationService.createApplication(any(ApplicationRequest.class), eq(user)))
+			.thenReturn(ApplicationResponse.builder().id(12L).build());
+		when(applicationRepository.getReferenceById(12L)).thenReturn(Application.builder().id(12L).build());
+
+		Email email = Email.builder()
+			.user(user)
+			.direction(EmailDirection.SENT)
+			.subject("Candidatura para Engenheiro de Software")
+			.rawContent("Segue meu currículo para a vaga.")
+			.toAddress("contato@techcorp.io")
+			.fromAddress("eduardo@gmail.com")
+			.build();
+
+		emailParserService.parseAndProcess(email);
+
+		ArgumentCaptor<ApplicationRequest> captor = ArgumentCaptor.forClass(ApplicationRequest.class);
+		verify(applicationService).createApplication(captor.capture(), eq(user));
+		assertEquals("Techcorp", captor.getValue().getCompanyName());
+		assertEquals("Engenheiro", captor.getValue().getPosition());
+		assertNotNull(email.getApplication());
+	}
+
+	@Test
+	void parseAndProcess_sentEmailWithoutRecruitingSignalIsIgnored() {
+		User user = mock(User.class);
+		when(user.getId()).thenReturn(1L);
+		when(applicationRepository.findAllByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of());
+
+		Email email = Email.builder()
+			.user(user)
+			.direction(EmailDirection.SENT)
+			.subject("Reunião de equipe na segunda")
+			.rawContent("Confirmando presença na reunião.")
+			.toAddress("grupo@techcorp.io")
+			.fromAddress("eduardo@gmail.com")
+			.build();
+
+		emailParserService.parseAndProcess(email);
+
+		verify(applicationService, never())
+			.createApplication(any(ApplicationRequest.class), any(User.class));
 	}
 }
