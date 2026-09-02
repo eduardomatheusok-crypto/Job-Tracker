@@ -1,10 +1,9 @@
-import { Briefcase, Inbox, LogOut, Mail } from 'lucide-react'
+import { Briefcase, LogOut, Mail } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth.tsx'
 
 const NAV_LINKS = [
   { to: '/applications', label: 'Candidaturas', icon: Briefcase },
-  { to: '/emails', label: 'E-mails', icon: Inbox },
   { to: '/gmail', label: 'Gmail', icon: Mail },
 ]
 

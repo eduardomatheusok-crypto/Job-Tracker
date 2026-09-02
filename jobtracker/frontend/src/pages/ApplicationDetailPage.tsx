@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   ArrowLeft,
@@ -11,6 +11,8 @@ import {
   MapPin,
   Pencil,
   Save,
+  Search,
+  Send,
   Tag,
   Trash2,
   X,
@@ -44,7 +46,7 @@ export function ApplicationDetailPage() {
       const [appData, historyData, emailsData] = await Promise.all([
         api<Application>(`/api/applications/${applicationId}`),
         api<ApplicationHistoryItem[]>(`/api/applications/${applicationId}/history`),
-        api<{ content: Email[] }>(`/api/emails?applicationId=${applicationId}&size=50`),
+        api<{ content: Email[] }>(`/api/emails?applicationId=${applicationId}&size=200`),
       ])
       setApp(appData)
       setHistory(historyData)
@@ -350,6 +352,21 @@ function HistoryCard({ history }: { history: ApplicationHistoryItem[] }) {
 }
 
 function EmailsCard({ emails }: { emails: Email[] }) {
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<Email | null>(null)
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return emails
+    return emails.filter((email) =>
+      email.subject.toLowerCase().includes(q) ||
+      email.fromAddress.toLowerCase().includes(q) ||
+      (email.toAddress ?? '').toLowerCase().includes(q) ||
+      email.snippet.toLowerCase().includes(q) ||
+      email.rawContent.toLowerCase().includes(q),
+    )
+  }, [emails, query])
+
   return (
     <section className="rounded-2xl bg-white p-6 shadow-sm">
       <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -359,17 +376,84 @@ function EmailsCard({ emails }: { emails: Email[] }) {
       {emails.length === 0 ? (
         <p className="text-sm text-slate-500">Nenhum e-mail vinculado a esta candidatura.</p>
       ) : (
-        <ul className="space-y-3">
-          {emails.map((email) => (
-            <li key={email.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-              <p className="truncate text-sm font-medium text-slate-800">{email.subject}</p>
-              <p className="truncate text-xs text-slate-500">{email.fromAddress}</p>
-              <p className="mt-1 text-xs text-slate-400">{formatDateTime(email.receivedAt)}</p>
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="relative mb-3">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar e-mails…"
+              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+          <ul className="space-y-3">
+            {filtered.map((email) => (
+              <li key={email.id}>
+                <button
+                  onClick={() => setSelected(email)}
+                  className="w-full rounded-lg border border-slate-100 bg-slate-50 p-3 text-left transition-colors hover:border-indigo-200 hover:bg-indigo-50/50"
+                >
+                  <div className="flex items-center gap-2">
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{email.subject || '(sem assunto)'}</p>
+                    {email.direction === 'SENT' && (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                        <Send className="size-3" />
+                        Enviado
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">
+                    {email.direction === 'SENT' ? `Para ${email.toAddress ?? ''}` : email.fromAddress}
+                  </p>
+                  {email.snippet ? <p className="mt-1 line-clamp-2 text-xs text-slate-400">{email.snippet}</p> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {filtered.length === 0 ? <p className="text-sm text-slate-400">Nenhum e-mail encontrado.</p> : null}
+        </>
       )}
+      {selected ? <EmailModal email={selected} onClose={() => setSelected(null)} /> : null}
     </section>
+  )
+}
+
+function EmailModal({ email, onClose }: { email: Email; onClose: () => void }) {
+  const content = email.rawContent.trim() || email.snippet
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 pt-12"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="break-words text-lg font-semibold text-slate-900">{email.subject || '(sem assunto)'}</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              {email.direction === 'SENT' ? 'Para: ' : 'De: '}
+              <span className="font-medium text-slate-700">
+                {email.direction === 'SENT' ? email.toAddress ?? '—' : email.fromAddress}
+              </span>
+              <span className="mx-1.5">·</span>
+              {formatDateTime(email.receivedAt)}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Fechar"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          {content || 'Sem conteúdo.'}
+        </div>
+      </div>
+    </div>
   )
 }
 

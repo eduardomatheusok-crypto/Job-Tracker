@@ -83,13 +83,17 @@ export interface ApplicationHistoryItem {
   changedAt: string
 }
 
+export type EmailDirection = 'INBOUND' | 'SENT'
+
 export interface Email {
   id: number
   userId: number
   applicationId: number | null
   messageId: string
+  direction: EmailDirection
   subject: string
   fromAddress: string
+  toAddress: string | null
   snippet: string
   rawContent: string
   receivedAt: string
