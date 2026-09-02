@@ -12,8 +12,7 @@ export default function Layout() {
   const navigate = useNavigate()
 
   const handleLogout = () => {
-    logout()
-    navigate('/login', { replace: true })
+    void logout().then(() => navigate('/login', { replace: true }))
   }
 
   return (

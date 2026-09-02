@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Loader2, Plus, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Loader2, Plus, Search, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.ts'
 import { formatDate } from '../lib/date.ts'
@@ -22,6 +22,19 @@ export function ApplicationsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredApplications = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return applications
+    return applications.filter(
+      (app) =>
+        app.companyName.toLowerCase().includes(q) ||
+        app.position.toLowerCase().includes(q) ||
+        (app.platform ?? '').toLowerCase().includes(q) ||
+        (app.location ?? '').toLowerCase().includes(q),
+    )
+  }, [applications, searchQuery])
 
   const load = useCallback(async (page: number) => {
     setLoading(true)
@@ -91,26 +104,48 @@ export function ApplicationsPage() {
         </div>
       )}
 
+      <div className="relative mb-4">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Buscar por empresa, cargo, plataforma ou localização…"
+          className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-9 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-600"
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
+
       <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
             <Loader2 className="size-5 animate-spin" />
             Carregando…
           </div>
-        ) : applications.length === 0 ? (
+        ) : filteredApplications.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-slate-500">Nenhuma candidatura ainda.</p>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="mt-3 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-            >
-              <Plus className="size-4" />
-              Criar a primeira
-            </button>
+            <p className="text-slate-500">
+              {searchQuery ? 'Nenhuma candidatura encontrada para essa busca.' : 'Nenhuma candidatura ainda.'}
+            </p>
+            {!searchQuery && (
+              <button
+                onClick={() => setShowCreate(true)}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                <Plus className="size-4" />
+                Criar a primeira
+              </button>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {applications.map((app) => (
+            {filteredApplications.map((app) => (
               <li key={app.id}>
                 <Link
                   to={`/applications/${app.id}`}

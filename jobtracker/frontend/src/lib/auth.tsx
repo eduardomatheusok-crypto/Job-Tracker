@@ -7,7 +7,7 @@ interface AuthContextValue {
   user: User | null
   login: (payload: LoginRequest) => Promise<void>
   register: (payload: RegisterRequest) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -36,7 +36,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuth(auth.token, auth.user)
         setUser(auth.user)
       },
-      logout: () => {
+      logout: async () => {
+        try {
+          await api<void>('/api/auth/logout', { method: 'POST' })
+        } catch {
+          // falha no logout no servidor não impede logout local
+        }
         clearAuth()
         setUser(null)
       },

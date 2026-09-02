@@ -38,10 +38,12 @@ public class GmailService {
 
 	private static final Logger log = LoggerFactory.getLogger(GmailService.class);
 
-	private static final String SEARCH_QUERY =
+	private static final String SEARCH_QUERY_INBOUND =
 		"subject:(candidatura OR vaga OR \"processo seletivo\" OR entrevista OR \"application\" OR interview) "
 			+ "-from:(render.com OR vercel.com OR netlify.com OR github.com OR gitlab.com OR digitalocean.com OR "
 			+ "heroku.com OR aws.amazon.com OR mailchimp.com OR sendgrid.net OR statuspage.io)";
+
+	private static final String SEARCH_QUERY_SENT = "label:sent";
 
 	@Value("${google.client-id}")
 	private String clientId;
@@ -175,22 +177,39 @@ public class GmailService {
 
 	private List<Message> fetchAllMatchingMessages(Gmail client) throws IOException {
 		List<Message> allMessages = new ArrayList<>();
+		allMessages.addAll(fetchByQuery(client, SEARCH_QUERY_INBOUND));
+		allMessages.addAll(fetchByQuery(client, SEARCH_QUERY_SENT));
+
+		// Deduplica por messageId (um e-mail pode casar com as duas queries)
+		return allMessages.stream()
+			.collect(java.util.stream.Collectors.toMap(
+				Message::getId,
+				m -> m,
+				(a, b) -> a
+			))
+			.values()
+			.stream()
+			.toList();
+	}
+
+	private List<Message> fetchByQuery(Gmail client, String query) throws IOException {
+		List<Message> messages = new ArrayList<>();
 		String pageToken = null;
 
 		do {
 			Gmail.Users.Messages.List request = client.users().messages().list("me")
-				.setQ(SEARCH_QUERY);
+				.setQ(query);
 			if (pageToken != null) {
 				request.setPageToken(pageToken);
 			}
 			ListMessagesResponse response = request.execute();
 			if (response.getMessages() != null) {
-				allMessages.addAll(response.getMessages());
+				messages.addAll(response.getMessages());
 			}
 			pageToken = response.getNextPageToken();
 		} while (pageToken != null);
 
-		return allMessages;
+		return messages;
 	}
 
 	private String resolveGrantedGmailAddress(GoogleTokenResponse response) {

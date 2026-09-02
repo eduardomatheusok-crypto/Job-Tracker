@@ -4,12 +4,11 @@ import jobtracker.dto.auth.AuthResponse;
 import jobtracker.dto.auth.LoginRequest;
 import jobtracker.dto.auth.RegisterRequest;
 import jobtracker.entity.User;
+import jobtracker.repository.UserRepository;
 import jobtracker.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,7 +19,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthService {
 
 	private final UserService userService;
-	private final AuthenticationManager authenticationManager;
+	private final UserRepository userRepository;
+	private final PasswordEncoder passwordEncoder;
 	private final JwtService jwtService;
 
 	public AuthResponse register(RegisterRequest request) {
@@ -46,15 +46,13 @@ public class AuthService {
 	@Transactional(readOnly = true)
 	public AuthResponse login(LoginRequest request) {
 		String email = request.getEmail().trim().toLowerCase();
-		try {
-			authenticationManager.authenticate(
-				new UsernamePasswordAuthenticationToken(email, request.getPassword())
-			);
-		} catch (AuthenticationException ex) {
+
+		User user = userRepository.findByEmailIgnoreCase(email)
+			.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
+
+		if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
 		}
-
-		User user = userService.findByEmailOrThrow(email);
 
 		return AuthResponse.builder()
 			.token(jwtService.generateToken(user.getEmail()))

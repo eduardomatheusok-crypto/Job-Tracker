@@ -73,10 +73,8 @@ public class EmailParserService {
 		String position = parsePosition(subject, body);
 		ApplicationStatus status = parseStatus(fullText);
 
-		Optional<Application> existingAppOpt = applicationRepository.findAllByUserIdOrderByCreatedAtDesc(email.getUser().getId())
-			.stream()
-			.filter(app -> app.getCompanyName().equalsIgnoreCase(companyName))
-			.findFirst();
+		Optional<Application> existingAppOpt = applicationRepository
+			.findFirstByUserIdAndCompanyNameIgnoreCaseOrderByCreatedAtDesc(email.getUser().getId(), companyName);
 
 		if (existingAppOpt.isPresent()) {
 			Application existingApp = existingAppOpt.get();
@@ -99,18 +97,16 @@ public class EmailParserService {
 				email.setApplication(existingApp);
 			}
 		} else {
-			if (status != ApplicationStatus.REJECTED) {
-				ApplicationRequest createRequest = ApplicationRequest.builder()
-					.companyName(companyName)
-					.position(position)
-					.status(status)
-					.notes("[Auto-Sync] Candidatura criada automaticamente baseado no e-mail: " + subject)
-					.build();
-				var newAppResponse = applicationService.createApplication(createRequest, email.getUser());
+			ApplicationRequest createRequest = ApplicationRequest.builder()
+				.companyName(companyName)
+				.position(position)
+				.status(status)
+				.notes("[Auto-Sync] Candidatura criada automaticamente baseado no e-mail: " + subject)
+				.build();
+			var newAppResponse = applicationService.createApplication(createRequest, email.getUser());
 
-				Application newApp = applicationRepository.getReferenceById(newAppResponse.getId());
-				email.setApplication(newApp);
-			}
+			Application newApp = applicationRepository.getReferenceById(newAppResponse.getId());
+			email.setApplication(newApp);
 		}
 	}
 

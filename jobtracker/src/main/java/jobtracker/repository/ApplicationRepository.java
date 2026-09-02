@@ -19,6 +19,8 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
 
 	Optional<Application> findByIdAndUserId(Long id, Long userId);
 
+	Optional<Application> findFirstByUserIdAndCompanyNameIgnoreCaseOrderByCreatedAtDesc(Long userId, String companyName);
+
 	@Query("SELECT a.status, COUNT(a) FROM Application a WHERE a.user.id = :userId GROUP BY a.status")
 	List<Object[]> countApplicationsByStatus(@Param("userId") Long userId);
 }
