@@ -1,0 +1,11 @@
+# Configurações de deploy com credenciais
+render*.yaml
+
+# Ambientes e segredos
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
