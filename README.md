@@ -16,6 +16,8 @@ O JobTracker centraliza todo o seu processo seletivo em três pilares:
 
 Na demo você pode **criar uma conta gratuita**, adicionar candidaturas manualmente, acompanhar o histórico de status e testar a integração com a extensão. Acesse e experimente como o fluxo funciona de ponta a ponta.
 
+> **Usando a extensão:** depois de criar sua conta na demo, copie o link da API `https://job-tracker-g732.onrender.com` e cole no campo **URL da API** do popup da extensão, junto com o seu e-mail e senha.
+
 ---
 
 ## ✨ Funcionalidades
