@@ -94,7 +94,7 @@ Variáveis principais:
 | `JWT_SECRET` | sim | Chave do JWT (mínimo 32 bytes) |
 | `ENCRYPTION_KEY` | sim | Chave de criptografia dos tokens OAuth (AES-GCM) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | para Gmail* | App Google OAuth |
-| `GOOGLE_REDIRECT_URI` | não | Redirect do OAuth (default `http://localhost:8080/api/gmail/callback`) |
+| `GOOGLE_REDIRECT_URI` | não | Redirect do OAuth (default `http://localhost:8080/api/gmail/callback`; no Render: `https://job-tracker-g732.onrender.com/api/gmail/callback`) |
 | `CORS_ALLOWED_ORIGINS` | não | Origens permitidas (separadas por vírgula; vazio = libera tudo) |
 | `GMAIL_SYNC_*` | não | Ajustes da sincronização automática |
 
@@ -113,12 +113,13 @@ docker compose up --build
 ```
 
 A API fica em `http://localhost:8080` — Swagger UI disponível em `/swagger-ui.html`.
+Em produção: `https://job-tracker-g732.onrender.com`.
 
 ### 2. Frontend
 
 ```bash
 cd frontend
-cp .env.example .env   # ajuste VITE_API_URL (default http://localhost:8080)
+cp .env.example .env   # ajuste VITE_API_URL (local: http://localhost:8080 | produção: https://job-tracker-g732.onrender.com)
 npm install
 npm run dev
 ```
@@ -146,7 +147,7 @@ A extensão captura automaticamente os dados da vaga aberta na página e os envi
 ### Como usar
 
 1. Clique no ícone da extensão para abrir o popup.
-2. Na primeira vez, informe a **URL da API** (ex.: `http://localhost:8080`) e seu **e-mail/senha** do JobTracker. O token JWT fica salvo apenas no `chrome.storage.local` da extensão.
+2. Na primeira vez, informe a **URL da API** (ex.: `https://job-tracker-g732.onrender.com`) e seu **e-mail/senha** do JobTracker. O token JWT fica salvo apenas no `chrome.storage.local` da extensão.
 3. Abra uma página de vaga (LinkedIn, Indeed, Gupy, Greenhouse, Workable...) e abra o popup: os campos já vêm preenchidos.
 4. Ajuste o que precisar, escolha o **status** e clique em **Salvar candidatura**.
 
@@ -163,11 +164,7 @@ A captura é apenas uma estimativa inicial — todos os campos são editáveis a
 
 ## 🌐 Deploy
 
-- **Frontend** → Vercel: importar a pasta `frontend`, build `npm run build`, saída `dist`; definir `VITE_API_URL` apontando para o backend.
+- **Frontend** → Vercel: importar a pasta `frontend`, build `npm run build`, saída `dist`; definir `VITE_API_URL=https://job-tracker-g732.onrender.com`.
 - **Backend** → Render (ou similar): perfil `prod`, com `CORS_ALLOWED_ORIGINS` apontando para o domínio do frontend. Há um blueprint em `render.yaml`.
 
 ---
-
-## 📜 Licença
-
-Este projeto é open source e está disponível sob a [Licença MIT](LICENSE) (ou a que você definir).
