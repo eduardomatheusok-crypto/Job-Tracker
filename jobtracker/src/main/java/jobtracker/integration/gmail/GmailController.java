@@ -87,11 +87,20 @@ public class GmailController {
 	// -----------------------------------------------------------------------
 	@PostMapping("/sync")
 	public ResponseEntity<Map<String, Object>> syncEmails() throws IOException {
-		int count = gmailService.syncEmails(currentUserService.get().getId());
-		return ResponseEntity.ok(Map.of(
-			"message", "Sincronização concluída",
-			"emailsProcessed", count
-		));
+		try {
+			int count = gmailService.syncEmails(currentUserService.get().getId());
+			return ResponseEntity.ok(Map.of(
+				"message", "Sincronização concluída",
+				"emailsProcessed", count,
+				"connected", true
+			));
+		} catch (jakarta.persistence.EntityNotFoundException e) {
+			return ResponseEntity.ok(Map.of(
+				"message", "Gmail não conectado",
+				"emailsProcessed", 0,
+				"connected", false
+			));
+		}
 	}
 
 	// -----------------------------------------------------------------------

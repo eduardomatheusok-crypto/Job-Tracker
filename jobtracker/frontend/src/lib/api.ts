@@ -130,3 +130,16 @@ export async function cachedApi<T>(path: string, options: RequestInit = {}): Pro
   }
   return data
 }
+
+export function clearApiCache(pathPrefix?: string): void {
+  if (!pathPrefix) {
+    cache.clear()
+    return
+  }
+  const prefix = cacheKey(pathPrefix)
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) {
+      cache.delete(key)
+    }
+  }
+}

@@ -13,8 +13,8 @@ public class GmailSyncScheduler {
 	private final GmailService gmailService;
 
 	@Scheduled(
-		initialDelayString = "${app.gmail.sync.initial-delay-ms:60000}",
-		fixedDelayString = "${app.gmail.sync.fixed-delay-ms:3600000}"
+		initialDelayString = "${app.gmail.sync.initial-delay-ms:30000}",
+		fixedDelayString = "${app.gmail.sync.fixed-delay-ms:300000}"
 	)
 	public void syncAll() {
 		gmailService.syncAllConnections();

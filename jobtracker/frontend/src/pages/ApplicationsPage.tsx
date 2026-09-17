@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Loader2, Plus, Search, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { ApiError, api, cachedApi } from '../lib/api.ts'
+import { ApiError, api, cachedApi, clearApiCache } from '../lib/api.ts'
 import { formatDate } from '../lib/date.ts'
 import { STATUS_META, STATUS_ORDER } from '../lib/status.ts'
-import type { Application, ApplicationRequest, ApplicationStatus, ApplicationSummary, Page } from '../lib/types.ts'
+import type { Application, ApplicationRequest, ApplicationStatus, ApplicationSummary, Page, SyncResponse } from '../lib/types.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
 
 const PAGE_SIZE = 20
+const AUTO_SYNC_COOLDOWN_MS = 3 * 60 * 1000 // 3 minutos
 
 const INPUT_CLASS =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'
@@ -20,9 +21,12 @@ export function ApplicationsPage() {
   const [totalPages, setTotalPages] = useState(0)
   const [totalElements, setTotalElements] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const syncTimeoutRef = useRef<number | undefined>(undefined)
 
   const filteredApplications = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -56,30 +60,97 @@ export function ApplicationsPage() {
     }
   }, [])
 
+  const triggerSync = useCallback(async (manual = false) => {
+    setSyncing(true)
+    if (manual) {
+      setSyncMessage(null)
+    }
+    try {
+      const res = await api<SyncResponse>('/api/gmail/sync', { method: 'POST' })
+      if (res.emailsProcessed > 0) {
+        clearApiCache('/api/applications')
+        await load(0)
+        setSyncMessage(`✅ ${res.emailsProcessed} novo(s) e-mail(s) sincronizado(s)!`)
+      } else if (manual) {
+        setSyncMessage('Tudo atualizado. Nenhum novo e-mail encontrado.')
+      }
+    } catch {
+      if (manual) {
+        setSyncMessage('Não foi possível sincronizar no momento.')
+      }
+    } finally {
+      setSyncing(false)
+      if (syncTimeoutRef.current) {
+        window.clearTimeout(syncTimeoutRef.current)
+      }
+      syncTimeoutRef.current = window.setTimeout(() => {
+        setSyncMessage(null)
+      }, 5000)
+    }
+  }, [load])
+
   useEffect(() => {
     void load(0)
-  }, [load])
+
+    // Auto-sync com debounce de 3 minutos via sessionStorage
+    const lastSync = Number(sessionStorage.getItem('jobtracker.last_auto_sync') || '0')
+    const now = Date.now()
+    if (now - lastSync > AUTO_SYNC_COOLDOWN_MS) {
+      sessionStorage.setItem('jobtracker.last_auto_sync', now.toString())
+      void triggerSync(false)
+    }
+
+    return () => {
+      if (syncTimeoutRef.current) {
+        window.clearTimeout(syncTimeoutRef.current)
+      }
+    }
+  }, [load, triggerSync])
 
   const handleCreated = async () => {
     setShowCreate(false)
+    clearApiCache('/api/applications')
     await load(0)
   }
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Candidaturas</h1>
           <p className="text-sm text-slate-500">{totalElements} no total</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
-        >
-          <Plus className="size-4" />
-          Nova candidatura
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void triggerSync(true)}
+            disabled={syncing || loading}
+            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-60"
+            title="Sincronizar e-mails do Gmail agora"
+          >
+            <RefreshCw className={`size-4 ${syncing ? 'animate-spin text-indigo-600' : 'text-slate-500'}`} />
+            <span>{syncing ? 'Sincronizando…' : 'Sincronizar'}</span>
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-700"
+          >
+            <Plus className="size-4" />
+            Nova candidatura
+          </button>
+        </div>
       </div>
+
+      {syncMessage && (
+        <div className="mb-4 flex items-center justify-between rounded-lg bg-indigo-50 px-3.5 py-2.5 text-sm text-indigo-800 ring-1 ring-inset ring-indigo-200 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="size-4 text-indigo-600 shrink-0" />
+            <span>{syncMessage}</span>
+          </div>
+          <button onClick={() => setSyncMessage(null)} className="text-indigo-400 hover:text-indigo-600">
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
 
       {summary && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
