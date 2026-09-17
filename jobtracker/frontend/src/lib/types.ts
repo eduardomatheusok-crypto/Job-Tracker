@@ -120,4 +120,5 @@ export interface GmailStatus {
 export interface SyncResponse {
   message: string
   emailsProcessed: number
+  connected?: boolean
 }

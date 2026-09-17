@@ -75,7 +75,11 @@ export function GmailPage() {
     setSyncing(true)
     try {
       const result = await api<SyncResponse>('/api/gmail/sync', { method: 'POST' })
-      setMessage(`${result.emailsProcessed} e-mail(ns) processado(s).`)
+      if (result.connected === false) {
+        setError(result.message || 'Gmail desconectado. Por favor, reconecte sua conta.')
+      } else {
+        setMessage(`${result.emailsProcessed} e-mail(ns) processado(s).`)
+      }
       await loadStatus()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Falha na sincronização')

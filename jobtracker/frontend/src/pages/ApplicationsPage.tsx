@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ApiError, api, cachedApi, clearApiCache } from '../lib/api.ts'
 import { formatDate } from '../lib/date.ts'
@@ -14,6 +14,12 @@ const AUTO_SYNC_COOLDOWN_MS = 3 * 60 * 1000 // 3 minutos
 const INPUT_CLASS =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'
 
+interface SyncFeedback {
+  type: 'success' | 'warning' | 'error'
+  message: string
+  showGmailLink?: boolean
+}
+
 export function ApplicationsPage() {
   const [applications, setApplications] = useState<Application[]>([])
   const [summary, setSummary] = useState<ApplicationSummary | null>(null)
@@ -22,7 +28,7 @@ export function ApplicationsPage() {
   const [totalElements, setTotalElements] = useState(0)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
-  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [syncFeedback, setSyncFeedback] = useState<SyncFeedback | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -63,20 +69,39 @@ export function ApplicationsPage() {
   const triggerSync = useCallback(async (manual = false) => {
     setSyncing(true)
     if (manual) {
-      setSyncMessage(null)
+      setSyncFeedback(null)
     }
     try {
       const res = await api<SyncResponse>('/api/gmail/sync', { method: 'POST' })
-      if (res.emailsProcessed > 0) {
+      if (res.connected === false) {
+        if (manual) {
+          setSyncFeedback({
+            type: 'warning',
+            message: res.message || 'Gmail desconectado. Conecte sua conta para sincronizar.',
+            showGmailLink: true,
+          })
+        }
+      } else if (res.emailsProcessed > 0) {
         clearApiCache('/api/applications')
         await load(0)
-        setSyncMessage(`✅ ${res.emailsProcessed} novo(s) e-mail(s) sincronizado(s)!`)
+        setSyncFeedback({
+          type: 'success',
+          message: `✅ ${res.emailsProcessed} novo(s) e-mail(s) sincronizado(s)!`,
+        })
       } else if (manual) {
-        setSyncMessage('Tudo atualizado. Nenhum novo e-mail encontrado.')
+        setSyncFeedback({
+          type: 'success',
+          message: 'Tudo atualizado. Nenhum novo e-mail encontrado.',
+        })
       }
-    } catch {
+    } catch (err) {
       if (manual) {
-        setSyncMessage('Não foi possível sincronizar no momento.')
+        const errorMsg = err instanceof ApiError ? err.message : 'Não foi possível sincronizar no momento.'
+        setSyncFeedback({
+          type: 'error',
+          message: errorMsg,
+          showGmailLink: true,
+        })
       }
     } finally {
       setSyncing(false)
@@ -84,8 +109,8 @@ export function ApplicationsPage() {
         window.clearTimeout(syncTimeoutRef.current)
       }
       syncTimeoutRef.current = window.setTimeout(() => {
-        setSyncMessage(null)
-      }, 5000)
+        setSyncFeedback(null)
+      }, 7000)
     }
   }, [load])
 
@@ -140,13 +165,34 @@ export function ApplicationsPage() {
         </div>
       </div>
 
-      {syncMessage && (
-        <div className="mb-4 flex items-center justify-between rounded-lg bg-indigo-50 px-3.5 py-2.5 text-sm text-indigo-800 ring-1 ring-inset ring-indigo-200 animate-fadeIn">
+      {syncFeedback && (
+        <div
+          className={`mb-4 flex items-center justify-between rounded-lg px-3.5 py-2.5 text-sm ring-1 ring-inset animate-fadeIn ${
+            syncFeedback.type === 'error'
+              ? 'bg-rose-50 text-rose-800 ring-rose-200'
+              : syncFeedback.type === 'warning'
+              ? 'bg-amber-50 text-amber-800 ring-amber-200'
+              : 'bg-indigo-50 text-indigo-800 ring-indigo-200'
+          }`}
+        >
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-4 text-indigo-600 shrink-0" />
-            <span>{syncMessage}</span>
+            {syncFeedback.type === 'error' || syncFeedback.type === 'warning' ? (
+              <AlertCircle
+                className={`size-4 shrink-0 ${
+                  syncFeedback.type === 'error' ? 'text-rose-600' : 'text-amber-600'
+                }`}
+              />
+            ) : (
+              <CheckCircle2 className="size-4 text-indigo-600 shrink-0" />
+            )}
+            <span>{syncFeedback.message}</span>
+            {syncFeedback.showGmailLink && (
+              <Link to="/gmail" className="ml-1 font-semibold underline hover:opacity-80">
+                Ir para Integração Gmail →
+              </Link>
+            )}
           </div>
-          <button onClick={() => setSyncMessage(null)} className="text-indigo-400 hover:text-indigo-600">
+          <button onClick={() => setSyncFeedback(null)} className="opacity-60 hover:opacity-100">
             <X className="size-4" />
           </button>
         </div>

@@ -76,15 +76,28 @@ public class EmailParserService {
 		String contactAddress = sent ? email.getToAddress() : email.getFromAddress();
 
 		String companyName = parseCompanyName(subject, body, contactAddress);
+		ApplicationStatus status = parseStatus(fullText);
+
+		// 1. Tenta buscar aplicação existente pelo nome extraído
+		Optional<Application> existingAppOpt = Optional.empty();
+		if (companyName != null && !companyName.isBlank()) {
+			existingAppOpt = applicationRepository
+				.findFirstByUserIdAndCompanyNameIgnoreCaseOrderByCreatedAtDesc(email.getUser().getId(), companyName);
+		}
+
+		// 2. Se não encontrou pelo nome extraído, checa se o e-mail cita alguma empresa já cadastrada pelo usuário
+		if (existingAppOpt.isEmpty()) {
+			existingAppOpt = matchExistingUserApplication(email.getUser().getId(), fullText, contactAddress);
+			if (existingAppOpt.isPresent()) {
+				companyName = existingAppOpt.get().getCompanyName();
+			}
+		}
+
 		if (companyName == null || companyName.isBlank()) {
 			return;
 		}
 
 		String position = parsePosition(subject, body);
-		ApplicationStatus status = parseStatus(fullText);
-
-		Optional<Application> existingAppOpt = applicationRepository
-			.findFirstByUserIdAndCompanyNameIgnoreCaseOrderByCreatedAtDesc(email.getUser().getId(), companyName);
 
 		if (existingAppOpt.isPresent()) {
 			Application existingApp = existingAppOpt.get();
@@ -123,6 +136,40 @@ public class EmailParserService {
 	}
 
 	/**
+	 * Cruza o e-mail com as candidaturas que o usuário já tem cadastradas (ex: via extensão ou criadas antes).
+	 * Permite vincular convites de entrevista, recusas ou etapas cujo remetente ou formato não contenham
+	 * o nome da empresa na regex de inscrição inicial.
+	 */
+	private Optional<Application> matchExistingUserApplication(Long userId, String fullText, String contactAddress) {
+		List<Application> userApps = applicationRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
+		String contactLower = contactAddress != null ? contactAddress.toLowerCase(Locale.ROOT) : "";
+
+		for (Application app : userApps) {
+			String company = app.getCompanyName();
+			if (company == null || company.isBlank()) {
+				continue;
+			}
+			String companyLower = company.trim().toLowerCase(Locale.ROOT);
+			if (companyLower.length() < 2) {
+				continue;
+			}
+
+			// 1. Checa se o remetente contém o nome da empresa
+			if (!contactLower.isBlank() && contactLower.contains(companyLower)) {
+				return Optional.of(app);
+			}
+
+			// 2. Checa se o texto (assunto ou corpo) contém a empresa como palavra isolada
+			Pattern pattern = Pattern.compile("\\b" + Pattern.quote(companyLower) + "\\b");
+			if (pattern.matcher(fullText).find()) {
+				return Optional.of(app);
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	/**
 	 * Ajusta {@link Application#getAppliedAt()} para a data do e-mail mais antigo
 	 * vinculado à candidatura, caso ela ainda não tenha sido definida (ex.: quando
 	 * a candidatura foi criada por um e-mail com status diferente de APPLIED).
@@ -147,14 +194,18 @@ public class EmailParserService {
 	private String parseCompanyName(String subject, String body, String contactAddress) {
 		String[] subjectPatterns = {
 			"(?i)(?:candidatura|vaga|inscrição|inscricao|oportunidade|seleção|selecao)\\s+(?:na|no|em|pela|at)\\s+" + COMPANY_GROUP,
+			"(?i)(?:convite para entrevista|entrevista|bate-papo|bate papo|interview)\\s+(?:na|no|em|com|pela|at|da|do)\\s+" + COMPANY_GROUP,
+			"(?i)(?:entrevista|bate-papo|bate papo)\\s*[-:|–]\\s*" + COMPANY_GROUP,
+			"(?i)(?:próxima etapa|proxima etapa|etapa de entrevista|avançou para a etapa)\\s+(?:na|no|em|da|do|at)?\\s*" + COMPANY_GROUP,
 			"(?i)processo seletivo\\s+(?:da|do|de|na|no|em|at)?\\s*" + COMPANY_GROUP,
+			"(?i)processo seletivo\\s*[-:|–]\\s*" + COMPANY_GROUP,
 			"(?i)(?:sua )?inscrição (?:foi )?(?:confirmada|recebida|realizada)\\s+(?:na|no|em|pela|at)\\s+" + COMPANY_GROUP,
 			"(?i)(?:obrigado por se candidatar|obrigado pelo interesse)\\s+(?:na|no|em|à|ao|da|do|at)\\s+" + COMPANY_GROUP,
 			"(?i)candidatura recebida\\s*[-:]\\s*" + COMPANY_GROUP,
 			"(?i)greenhouse application\\s*[-:]\\s*" + COMPANY_GROUP,
 			"(?i)application (?:at|to)\\s+" + COMPANY_GROUP,
 			"(?i)thank you for applying (?:to|at)\\s+" + COMPANY_GROUP,
-			"(?i)\\[([^\\]]+)\\]\\s*(?:sua candidatura|inscrição|processo seletivo|vaga|obrigado|recebemos)"
+			"(?i)\\[([^\\]]+)\\]\\s*(?:sua candidatura|inscrição|processo seletivo|vaga|obrigado|recebemos|entrevista)"
 		};
 
 		for (String regex : subjectPatterns) {
@@ -182,6 +233,8 @@ public class EmailParserService {
 		}
 
 		String[] bodyPatterns = {
+			"(?i)(?:convidar você para uma entrevista|convidamos você para uma entrevista|gostaríamos de agendar uma entrevista|agendamento de entrevista)\\s+(?:na|no|em|com|da|do|para)?\\s*" + COMPANY_GROUP,
+			"(?i)(?:você avançou|voce avancou) (?:no processo seletivo|para a etapa de entrevista|para a próxima etapa)\\s+(?:da|do|de|na|no)?\\s*" + COMPANY_GROUP,
 			"(?i)obrigado por se candidatar (?:na|no|em|para|à|ao|da|do)\\s+" + COMPANY_GROUP,
 			"(?i)sua candidatura para\\s+" + COMPANY_GROUP,
 			"(?i)welcome to the hiring process at\\s+" + COMPANY_GROUP,
@@ -269,7 +322,11 @@ public class EmailParserService {
 
 		if (text.contains("entrevista") || text.contains("conversar") || text.contains("agendar")
 			|| text.contains("schedule a chat") || text.contains("interview") || text.contains("hiring manager")
-			|| text.contains("video call") || text.contains("link da reunião")) {
+			|| text.contains("video call") || text.contains("link da reunião") || text.contains("bate-papo")
+			|| text.contains("bate papo") || text.contains("reunião") || text.contains("meet.google.com")
+			|| text.contains("teams.microsoft.com") || text.contains("zoom.us") || text.contains("próxima etapa")
+			|| text.contains("proxima etapa") || text.contains("etapa de entrevista") || text.contains("etapa técnica")
+			|| text.contains("etapa com o gestor") || text.contains("etapa com gestor")) {
 			return ApplicationStatus.INTERVIEW;
 		}
 

@@ -207,4 +207,36 @@ class EmailParserServiceTest {
 		verify(applicationService, never())
 			.createApplication(any(ApplicationRequest.class), any(User.class));
 	}
+
+	@Test
+	void parseAndProcess_matchesExistingApplicationAndUpdatesToInterview() {
+		User user = mock(User.class);
+		when(user.getId()).thenReturn(1L);
+
+		Application existingApp = mock(Application.class);
+		when(existingApp.getId()).thenReturn(20L);
+		when(existingApp.getCompanyName()).thenReturn("Nubank");
+		when(existingApp.getStatus()).thenReturn(ApplicationStatus.APPLIED);
+		when(existingApp.getNotes()).thenReturn("");
+
+		// Não encontra pela regex de extração estrita
+		when(applicationRepository.findFirstByUserIdAndCompanyNameIgnoreCaseOrderByCreatedAtDesc(1L, "Nubank"))
+			.thenReturn(java.util.Optional.of(existingApp));
+		when(applicationRepository.findAllByUserIdOrderByCreatedAtDesc(1L))
+			.thenReturn(List.of(existingApp));
+
+		Email email = Email.builder()
+			.user(user)
+			.subject("Convite para entrevista técnica")
+			.rawContent("Olá Eduardo, parabéns! Você avançou no processo seletivo da Nubank e gostaríamos de agendar sua entrevista via meet.google.com.")
+			.fromAddress("rh-recrutamento@gupy.io")
+			.build();
+
+		emailParserService.parseAndProcess(email);
+
+		ArgumentCaptor<UpdateApplicationRequest> captor = ArgumentCaptor.forClass(UpdateApplicationRequest.class);
+		verify(applicationService).updateApplication(eq(20L), captor.capture(), eq(user));
+		assertEquals(ApplicationStatus.INTERVIEW, captor.getValue().getStatus());
+		assertNotNull(email.getApplication());
+	}
 }

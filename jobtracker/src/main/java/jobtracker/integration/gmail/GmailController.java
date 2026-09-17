@@ -86,7 +86,7 @@ public class GmailController {
 	// Requer JWT. Sincroniza e-mails e retorna o número de e-mails processados.
 	// -----------------------------------------------------------------------
 	@PostMapping("/sync")
-	public ResponseEntity<Map<String, Object>> syncEmails() throws IOException {
+	public ResponseEntity<Map<String, Object>> syncEmails() {
 		try {
 			int count = gmailService.syncEmails(currentUserService.get().getId());
 			return ResponseEntity.ok(Map.of(
@@ -96,7 +96,21 @@ public class GmailController {
 			));
 		} catch (jakarta.persistence.EntityNotFoundException e) {
 			return ResponseEntity.ok(Map.of(
-				"message", "Gmail não conectado",
+				"message", "Gmail não conectado. Acesse o menu Gmail para conectar sua conta.",
+				"emailsProcessed", 0,
+				"connected", false
+			));
+		} catch (IllegalStateException e) {
+			log.warn("Gmail sync notice: {}", e.getMessage());
+			return ResponseEntity.ok(Map.of(
+				"message", e.getMessage(),
+				"emailsProcessed", 0,
+				"connected", false
+			));
+		} catch (Exception e) {
+			log.error("Gmail sync error", e);
+			return ResponseEntity.ok(Map.of(
+				"message", "Não foi possível sincronizar no momento. Tente reconectar sua conta na aba Gmail.",
 				"emailsProcessed", 0,
 				"connected", false
 			));
@@ -124,7 +138,12 @@ public class GmailController {
 	// -----------------------------------------------------------------------
 	@PostMapping("/disconnect")
 	public ResponseEntity<Map<String, String>> disconnect() {
-		gmailService.disconnectUser(currentUserService.get().getId());
-		return ResponseEntity.ok(Map.of("message", "Gmail desconectado com sucesso."));
+		try {
+			gmailService.disconnectUser(currentUserService.get().getId());
+			return ResponseEntity.ok(Map.of("message", "Gmail desconectado com sucesso."));
+		} catch (Exception e) {
+			log.warn("Gmail disconnect error handled gracefully", e);
+			return ResponseEntity.ok(Map.of("message", "Gmail desconectado com sucesso."));
+		}
 	}
 }

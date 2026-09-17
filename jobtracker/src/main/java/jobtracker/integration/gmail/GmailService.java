@@ -29,8 +29,11 @@ import jobtracker.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.google.api.client.auth.oauth2.TokenResponseException;
+import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -87,10 +90,14 @@ public class GmailService {
 		return gmailConnectionRepository.findByUserId(userId);
 	}
 
+	@Transactional
 	public void disconnectUser(Long userId) {
-		GmailConnection connection = gmailConnectionRepository.findByUserId(userId)
-			.orElseThrow(() -> new EntityNotFoundException("Gmail integration not found for user: " + userId));
-		gmailConnectionRepository.delete(connection);
+		gmailConnectionRepository.findByUserId(userId).ifPresent(conn -> {
+			if (conn.getUser() != null) {
+				conn.getUser().setGmailConnection(null);
+			}
+		});
+		gmailConnectionRepository.deleteByUserId(userId);
 	}
 
 	/**
@@ -107,9 +114,30 @@ public class GmailService {
 			return 0;
 		}
 
-		Gmail client = getGmailClient(connection);
+		Gmail client;
+		try {
+			client = getGmailClient(connection);
+		} catch (IllegalStateException e) {
+			throw e;
+		} catch (Exception e) {
+			log.warn("Gmail sync: client auth failed for user {}", userId, e);
+			connection.setActive(false);
+			gmailConnectionRepository.save(connection);
+			throw new IllegalStateException("Sua autorização com o Gmail expirou ou é inválida. Por favor, reconecte sua conta.", e);
+		}
 
-		List<Message> messages = fetchAllMatchingMessages(client);
+		List<Message> messages;
+		try {
+			messages = fetchAllMatchingMessages(client);
+		} catch (GoogleJsonResponseException e) {
+			if (e.getStatusCode() == 401 || e.getStatusCode() == 403) {
+				log.warn("Gmail sync: Google API rejected request (status={}) for user {}", e.getStatusCode(), userId);
+				connection.setActive(false);
+				gmailConnectionRepository.save(connection);
+				throw new IllegalStateException("Sua autorização com o Gmail expirou ou não possui as permissões necessárias. Por favor, reconecte sua conta.", e);
+			}
+			throw e;
+		}
 
 		int processed = 0;
 		int failed = 0;
@@ -260,14 +288,21 @@ public class GmailService {
 
 		// Força refresh do token se estiver expirado ou perto de expirar (1 minuto de margem)
 		if (connection.getTokenExpiresAt() == null || connection.getTokenExpiresAt().isBefore(Instant.now().plusSeconds(60))) {
-			credential.refreshToken();
-			connection.setEncryptedAccessToken(encryptionService.encrypt(credential.getAccessToken()));
-			if (credential.getExpiresInSeconds() != null) {
-				connection.setTokenExpiresAt(Instant.now().plusSeconds(credential.getExpiresInSeconds()));
-			} else {
-				connection.setTokenExpiresAt(Instant.now().plusSeconds(3600));
+			try {
+				credential.refreshToken();
+				connection.setEncryptedAccessToken(encryptionService.encrypt(credential.getAccessToken()));
+				if (credential.getExpiresInSeconds() != null) {
+					connection.setTokenExpiresAt(Instant.now().plusSeconds(credential.getExpiresInSeconds()));
+				} else {
+					connection.setTokenExpiresAt(Instant.now().plusSeconds(3600));
+				}
+				gmailConnectionRepository.save(connection);
+			} catch (TokenResponseException e) {
+				log.warn("Gmail token refresh failed for user {}: {}", connection.getUser().getId(), e.getDetails() != null ? e.getDetails().getError() : e.getMessage());
+				connection.setActive(false);
+				gmailConnectionRepository.save(connection);
+				throw new IllegalStateException("Sua autorização com o Gmail expirou ou foi revogada. Por favor, reconecte sua conta.", e);
 			}
-			gmailConnectionRepository.save(connection);
 		}
 
 		return new Gmail.Builder(
