@@ -39,7 +39,7 @@ public class GmailService {
 	private static final Logger log = LoggerFactory.getLogger(GmailService.class);
 
 	private static final String SEARCH_QUERY_INBOUND =
-		"subject:(candidatura OR vaga OR \"processo seletivo\" OR entrevista OR \"application\" OR interview) "
+		"(candidatura OR vaga OR vagas OR \"processo seletivo\" OR entrevista OR entrevistas OR \"application\" OR interview OR \"inscrição\" OR \"inscricao\" OR \"oportunidade\" OR \"recrutamento\" OR \"recruiting\" OR \"hiring\") "
 			+ "-from:(render.com OR vercel.com OR netlify.com OR github.com OR gitlab.com OR digitalocean.com OR "
 			+ "heroku.com OR aws.amazon.com OR mailchimp.com OR sendgrid.net OR statuspage.io)";
 
@@ -111,12 +111,6 @@ public class GmailService {
 
 		List<Message> messages = fetchAllMatchingMessages(client);
 
-		if (messages.isEmpty()) {
-			connection.setLastSyncedAt(Instant.now());
-			gmailConnectionRepository.save(connection);
-			return 0;
-		}
-
 		int processed = 0;
 		int failed = 0;
 		for (Message messageSummary : messages) {
@@ -152,6 +146,19 @@ public class GmailService {
 			} catch (Exception e) {
 				failed++;
 				log.warn("Gmail sync: failed processing message {} for user {}", messageId, userId, e);
+			}
+		}
+
+		// Reprocessa e-mails já baixados que ainda não possuam candidatura vinculada
+		List<Email> orphans = emailRepository.findAllByUserIdAndApplicationIsNull(userId);
+		for (Email orphan : orphans) {
+			try {
+				emailSyncProcessor.reprocess(orphan);
+				if (orphan.getApplication() != null) {
+					processed++;
+				}
+			} catch (Exception e) {
+				log.warn("Gmail sync: failed reprocessing orphan email {} for user {}", orphan.getId(), userId, e);
 			}
 		}
 

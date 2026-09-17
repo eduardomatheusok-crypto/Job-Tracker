@@ -34,17 +34,17 @@ public class EmailParserService {
 
 	/** Sinais de que o e-mail realmente trata de recrutamento (usado no fallback por domínio). */
 	private static final List<String> RECRUITING_SIGNALS = List.of(
-		"candidatura", "candidatar", "candidatar-se",
+		"candidatura", "candidatar", "candidatar-se", "candidato", "candidata",
 		"vaga", "vagas", "processo seletivo", "entrevista", "entrevistas",
-		"recrutamento", "recruiting", "inscrição", "inscricao",
+		"recrutamento", "recruiting", "inscrição", "inscricao", "inscrito",
 		"pré-selecionado", "pré selecionado", "pré-seleção", "pré seleção",
-		"hiring", "talent", "career", "job offer", "offer letter", "carta de oferta",
-		"proposta", "contratação", "contratacao", "join our team",
-		"thank you for applying", "you applied", "your application",
-		"application received", "application at", "application for",
-		"submitted your application", "welcome to the hiring process",
-		"selection process", "job posting", "position",
-		"opportunity", "emprego"
+		"hiring", "talent", "talentos", "career", "careers", "carreira", "carreiras",
+		"job offer", "offer letter", "carta de oferta", "proposta", "contratação",
+		"contratacao", "join our team", "thank you for applying", "you applied",
+		"your application", "application received", "application at", "application for",
+		"submitted your application", "welcome to the hiring process", "selection process",
+		"job posting", "position", "opportunity", "oportunidade", "emprego", "currículo",
+		"curriculo", "cv", "gupy", "greenhouse", "lever", "workable", "etapa", "feedback"
 	);
 
 	/** Captura palavras com unicode (acentos), números e os caracteres típicos de cargo. */
@@ -146,54 +146,90 @@ public class EmailParserService {
 
 	private String parseCompanyName(String subject, String body, String contactAddress) {
 		String[] subjectPatterns = {
-			"(?i)candidatura na\\s+" + COMPANY_GROUP,
-			"(?i)vaga na\\s+" + COMPANY_GROUP,
-			"(?i)processo seletivo\\s+" + COMPANY_GROUP,
-			"(?i)inscrição confirmada na\\s+" + COMPANY_GROUP,
-			"(?i)candidatura recebida\\s*\\-\\s*" + COMPANY_GROUP,
-			"(?i)greenhouse application\\s*\\-\\s*" + COMPANY_GROUP,
-			"(?i)application at\\s+" + COMPANY_GROUP,
-			"(?i)thank you for applying to\\s+" + COMPANY_GROUP
+			"(?i)(?:candidatura|vaga|inscrição|inscricao|oportunidade|seleção|selecao)\\s+(?:na|no|em|pela|at)\\s+" + COMPANY_GROUP,
+			"(?i)processo seletivo\\s+(?:da|do|de|na|no|em|at)?\\s*" + COMPANY_GROUP,
+			"(?i)(?:sua )?inscrição (?:foi )?(?:confirmada|recebida|realizada)\\s+(?:na|no|em|pela|at)\\s+" + COMPANY_GROUP,
+			"(?i)(?:obrigado por se candidatar|obrigado pelo interesse)\\s+(?:na|no|em|à|ao|da|do|at)\\s+" + COMPANY_GROUP,
+			"(?i)candidatura recebida\\s*[-:]\\s*" + COMPANY_GROUP,
+			"(?i)greenhouse application\\s*[-:]\\s*" + COMPANY_GROUP,
+			"(?i)application (?:at|to)\\s+" + COMPANY_GROUP,
+			"(?i)thank you for applying (?:to|at)\\s+" + COMPANY_GROUP,
+			"(?i)\\[([^\\]]+)\\]\\s*(?:sua candidatura|inscrição|processo seletivo|vaga|obrigado|recebemos)"
 		};
 
 		for (String regex : subjectPatterns) {
 			Pattern pattern = Pattern.compile(regex);
 			Matcher matcher = pattern.matcher(subject);
 			if (matcher.find()) {
-				return matcher.group(1).trim();
+				String extracted = matcher.group(1).trim();
+				if (!extracted.isBlank() && extracted.length() >= 2) {
+					return extracted;
+				}
 			}
 		}
 
+		String companyFromDisplayName = extractCompanyFromDisplayName(contactAddress);
+		if (companyFromDisplayName != null && hasRecruitingSignal(subject, body)) {
+			return companyFromDisplayName;
+		}
+
 		if (contactAddress != null && contactAddress.contains("@")) {
-			String companyFromDomain = extractCompanyFromDomain(contactAddress.substring(contactAddress.indexOf("@") + 1));
+			String emailDomain = contactAddress.substring(contactAddress.lastIndexOf("@") + 1).replace(">", "").trim();
+			String companyFromDomain = extractCompanyFromDomain(emailDomain);
 			if (companyFromDomain != null && hasRecruitingSignal(subject, body)) {
 				return companyFromDomain;
 			}
 		}
 
 		String[] bodyPatterns = {
-			"(?i)obrigado por se candidatar na\\s+" + COMPANY_GROUP,
+			"(?i)obrigado por se candidatar (?:na|no|em|para|à|ao|da|do)\\s+" + COMPANY_GROUP,
 			"(?i)sua candidatura para\\s+" + COMPANY_GROUP,
-			"(?i)welcome to the hiring process at\\s+" + COMPANY_GROUP
+			"(?i)welcome to the hiring process at\\s+" + COMPANY_GROUP,
+			"(?i)inscrição realizada com sucesso (?:na|no|em|para)\\s+" + COMPANY_GROUP,
+			"(?i)equipe de recrutamento (?:da|do|de)\\s+" + COMPANY_GROUP
 		};
 
 		for (String regex : bodyPatterns) {
 			Pattern pattern = Pattern.compile(regex);
 			Matcher matcher = pattern.matcher(body);
 			if (matcher.find()) {
-				return matcher.group(1).trim();
+				String extracted = matcher.group(1).trim();
+				if (!extracted.isBlank() && extracted.length() >= 2) {
+					return extracted;
+				}
 			}
 		}
 
 		return null;
 	}
 
+	private String extractCompanyFromDisplayName(String contactAddress) {
+		if (contactAddress == null || !contactAddress.contains("<")) {
+			return null;
+		}
+		String namePart = contactAddress.substring(0, contactAddress.indexOf("<")).trim();
+		namePart = namePart.replaceAll("^[\"']+|[\"']+$", "").trim();
+
+		if (namePart.isBlank()) {
+			return null;
+		}
+
+		// Remove sufixos como " via Gupy", " via Greenhouse", " - Recrutamento", " Careers", etc.
+		String cleaned = namePart.replaceAll("(?i)\\s*(?:via\\s+(?:gupy|greenhouse|lever|workable|jobscore)|careers|recrutamento|recruiting|talent(?:s)? acquisition|rh|hr|jobs|team|equipe|notificações|notificacoes|notificacao).*$", "").trim();
+		cleaned = cleaned.replaceAll("^[\"'\\[\\(]+|[\"'\\)\\]]+$", "").trim();
+
+		String lower = cleaned.toLowerCase(Locale.ROOT);
+		boolean blocked = NON_RECRUITING_DOMAINS.stream().anyMatch(d -> lower.equals(d) || lower.startsWith(d));
+		if (blocked || cleaned.length() < 2 || cleaned.length() > 50) {
+			return null;
+		}
+
+		return capitalize(cleaned);
+	}
+
 	private String parsePosition(String subject, String body) {
 		String[] positionPatterns = {
-			"(?i)vaga de\\s+" + POSITION_GROUP,
-			"(?i)vaga para\\s+" + POSITION_GROUP,
-			"(?i)cargo de\\s+" + POSITION_GROUP,
-			"(?i)candidatura para\\s+" + POSITION_GROUP,
+			"(?i)(?:vaga|cargo|oportunidade|candidatura|posição|posicao)\\s+(?:de|para|for|as)\\s+" + POSITION_GROUP,
 			"(?i)application for\\s+" + POSITION_GROUP,
 			"(?i)position:\\s*" + POSITION_GROUP
 		};

@@ -53,4 +53,11 @@ public class EmailSyncProcessor {
 		savedEmail.setProcessedAt(Instant.now());
 		emailRepository.save(savedEmail);
 	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void reprocess(Email email) {
+		emailParserService.parseAndProcess(email);
+		email.setProcessedAt(Instant.now());
+		emailRepository.save(email);
+	}
 }
