@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Mail, RefreshCw, Trash2, Unplug } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { ExternalLink, KeyRound, Loader2, Mail, RefreshCw, Trash2, Unplug } from 'lucide-react'
 import { ApiError, api } from '../lib/api.ts'
 import { formatDateTime } from '../lib/date.ts'
 import type { GmailStatus, SyncResponse } from '../lib/types.ts'
@@ -13,6 +13,9 @@ export function GmailPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const pollRef = useRef<number | undefined>(undefined)
+  const [gmailEmail, setGmailEmail] = useState('')
+  const [appPassword, setAppPassword] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
 
   const loadStatus = useCallback(async () => {
     setError(null)
@@ -66,6 +69,26 @@ export function GmailPage() {
       }, 3000)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Falha ao iniciar conexão com o Gmail')
+    }
+  }
+
+  const handleConnectAppPassword = async (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    setSavingPassword(true)
+    try {
+      const result = await api<{ message: string }>('/api/gmail/connect-app-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: gmailEmail.trim(), appPassword }),
+      })
+      setAppPassword('')
+      setMessage(result.message)
+      await loadStatus()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Falha ao conectar o Gmail')
+    } finally {
+      setSavingPassword(false)
     }
   }
 
@@ -128,31 +151,85 @@ export function GmailPage() {
             Carregando…
           </div>
         ) : !status?.connected ? (
-          <div className="text-center">
-            <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-slate-100">
-              <Mail className="size-6 text-slate-500" />
-            </span>
-            <h2 className="mt-4 text-lg font-semibold text-slate-900">Conectar sua conta Gmail</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Ao conectar, o JobTracker poderá ler e-mails sobre candidaturas para criar e atualizar suas vagas.
-            </p>
-            <button
-              onClick={handleConnect}
-              disabled={connecting}
-              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {connecting ? <Loader2 className="size-4 animate-spin" /> : <Unplug className="size-4" />}
-              {connecting ? 'Aguardando autorização…' : 'Conectar Gmail'}
-            </button>
-            {connecting && (
+          <div>
+            <div className="text-center">
+              <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-slate-100">
+                <Mail className="size-6 text-slate-500" />
+              </span>
+              <h2 className="mt-4 text-lg font-semibold text-slate-900">Conectar sua conta Gmail</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Ao conectar, o JobTracker poderá ler e-mails sobre candidaturas para criar e atualizar suas vagas.
+              </p>
+            </div>
+
+            <form onSubmit={handleConnectAppPassword} className="mt-5 space-y-3">
+              <div>
+                <label htmlFor="gmail-email" className="block text-sm font-medium text-slate-700">E-mail do Gmail</label>
+                <input
+                  id="gmail-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={gmailEmail}
+                  onChange={(e) => setGmailEmail(e.target.value)}
+                  placeholder="voce@gmail.com"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="gmail-app-password" className="block text-sm font-medium text-slate-700">Senha de app</label>
+                <input
+                  id="gmail-app-password"
+                  type="password"
+                  required
+                  autoComplete="off"
+                  value={appPassword}
+                  onChange={(e) => setAppPassword(e.target.value)}
+                  placeholder="xxxx xxxx xxxx xxxx"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Exige verificação em 2 etapas.{' '}
+                  <a
+                    href="https://myaccount.google.com/apppasswords"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 font-medium text-indigo-600 hover:underline"
+                  >
+                    Gerar senha de app <ExternalLink className="size-3" />
+                  </a>
+                  . Ela é guardada criptografada e não é a senha da sua conta.
+                </p>
+              </div>
               <button
-                onClick={() => { stopPolling(); void loadStatus() }}
-                className="ml-2 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                type="submit"
+                disabled={savingPassword}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
               >
-                <RefreshCw className="size-4" />
-                Verificar agora
+                {savingPassword ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+                {savingPassword ? 'Verificando…' : 'Conectar Gmail'}
               </button>
-            )}
+            </form>
+
+            <div className="mt-5 border-t border-slate-100 pt-4 text-center">
+              <button
+                onClick={handleConnect}
+                disabled={connecting}
+                className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-700 disabled:opacity-60"
+              >
+                {connecting ? <Loader2 className="size-4 animate-spin" /> : <Unplug className="size-4" />}
+                {connecting ? 'Aguardando autorização…' : 'Ou conectar com login do Google (expira a cada 7 dias)'}
+              </button>
+              {connecting && (
+                <button
+                  onClick={() => { stopPolling(); void loadStatus() }}
+                  className="ml-2 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <RefreshCw className="size-4" />
+                  Verificar agora
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div>

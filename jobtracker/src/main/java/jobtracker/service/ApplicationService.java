@@ -26,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class ApplicationService {
 
 	private final ApplicationRepository applicationRepository;
-	private final UserService userService;
 	private final CurrentUserService currentUserService;
 	private final ApplicationHistoryService applicationHistoryService;
 

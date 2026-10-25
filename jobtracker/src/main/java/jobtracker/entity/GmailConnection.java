@@ -43,6 +43,10 @@ public class GmailConnection {
 	@Column(length = 2000)
 	private String encryptedRefreshToken;
 
+	/** Senha de app do Google (criptografada). Quando presente, o sync usa IMAP em vez da Gmail API. */
+	@Column(length = 2000)
+	private String encryptedAppPassword;
+
 	@Column
 	private Instant tokenExpiresAt;
 

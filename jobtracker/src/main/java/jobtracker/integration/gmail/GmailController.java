@@ -2,11 +2,16 @@ package jobtracker.integration.gmail;
 
 import java.io.IOException;
 import java.util.Map;
+import jakarta.validation.Valid;
+import jobtracker.dto.error.ApiError;
+import jobtracker.dto.gmail.AppPasswordConnectRequest;
+import jobtracker.entity.GmailConnection;
 import jobtracker.entity.User;
 import jobtracker.service.CurrentUserService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
  * <ul>
  *   <li>GET  /api/gmail/auth-url    – retorna URL de autorização Google (JWT obrigatório)
  *   <li>GET  /api/gmail/callback    – callback OAuth público; troca o código e salva conexão
+ *   <li>POST /api/gmail/connect-app-password – conecta via IMAP com senha de app (JWT obrigatório)
  *   <li>POST /api/gmail/sync        – sincroniza e-mails do usuário logado (JWT obrigatório)
  *   <li>GET  /api/gmail/status      – retorna status da conexão ativa (JWT obrigatório)
  *   <li>POST /api/gmail/disconnect  – remove a conexão do usuário logado (JWT obrigatório)
@@ -82,11 +88,31 @@ public class GmailController {
 	}
 
 	// -----------------------------------------------------------------------
+	// POST /api/gmail/connect-app-password
+	// Requer JWT. Conecta via IMAP com senha de app (não expira como o OAuth em modo "Testing").
+	// -----------------------------------------------------------------------
+	@PostMapping("/connect-app-password")
+	public ResponseEntity<?> connectWithAppPassword(@Valid @RequestBody AppPasswordConnectRequest request) {
+		try {
+			GmailConnection connection = gmailService.connectWithAppPassword(
+				currentUserService.get(), request.getEmail(), request.getAppPassword());
+			return ResponseEntity.ok(Map.of(
+				"message", "Gmail conectado com sucesso!",
+				"gmailAddress", connection.getGmailAddress()
+			));
+		} catch (IllegalArgumentException e) {
+			return ResponseEntity.badRequest().body(ApiError.of("Bad Request", e.getMessage()));
+		} catch (GmailSyncException e) {
+			return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiError.of("Bad Gateway", e.getMessage()));
+		}
+	}
+
+	// -----------------------------------------------------------------------
 	// POST /api/gmail/sync
 	// Requer JWT. Sincroniza e-mails e retorna o número de e-mails processados.
 	// -----------------------------------------------------------------------
 	@PostMapping("/sync")
-	public ResponseEntity<Map<String, Object>> syncEmails() {
+	public ResponseEntity<?> syncEmails() {
 		try {
 			int count = gmailService.syncEmails(currentUserService.get().getId());
 			return ResponseEntity.ok(Map.of(
@@ -107,13 +133,14 @@ public class GmailController {
 				"emailsProcessed", 0,
 				"connected", false
 			));
+		} catch (GmailSyncException e) {
+			// Falha temporária/de configuração: a conta continua conectada
+			return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+				.body(ApiError.of("Bad Gateway", e.getMessage()));
 		} catch (Exception e) {
 			log.error("Gmail sync error", e);
-			return ResponseEntity.ok(Map.of(
-				"message", "Não foi possível sincronizar no momento. Tente reconectar sua conta na aba Gmail.",
-				"emailsProcessed", 0,
-				"connected", false
-			));
+			return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+				.body(ApiError.of("Bad Gateway", "Não foi possível sincronizar no momento. Tente novamente em instantes."));
 		}
 	}
 

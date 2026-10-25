@@ -39,15 +39,17 @@ public class GmailOAuthService {
 			Collections.singleton(GmailScopes.GMAIL_READONLY)
 		)
 		.setAccessType("offline")
-		.setApprovalPrompt("force")
 		.build();
 	}
 
 	public String getAuthorizationUrl(String email) throws IOException {
 		String state = encryptionService.encrypt(email);
+		// prompt=consent garante um refresh token novo a cada conexão
+		// (substitui o parâmetro obsoleto approval_prompt=force; o Google rejeita os dois juntos)
 		return getFlow().newAuthorizationUrl()
 			.setRedirectUri(redirectUri)
 			.setState(state)
+			.set("prompt", "consent")
 			.build();
 	}
 

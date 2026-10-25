@@ -12,6 +12,8 @@ import com.google.api.services.gmail.model.ListMessagesResponse;
 import com.google.api.services.gmail.model.Message;
 import com.google.api.services.gmail.model.MessagePart;
 import com.google.api.services.gmail.model.MessagePartHeader;
+import jakarta.mail.AuthenticationFailedException;
+import jakarta.mail.MessagingException;
 import jakarta.persistence.EntityNotFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -60,6 +62,7 @@ public class GmailService {
 	private final EncryptionService encryptionService;
 	private final EmailRepository emailRepository;
 	private final EmailSyncProcessor emailSyncProcessor;
+	private final GmailImapClient gmailImapClient;
 
 	public GmailConnection connectUser(String code, String state) throws IOException {
 		String email = gmailOAuthService.decryptState(state);
@@ -75,12 +78,44 @@ public class GmailService {
 		connection.setEncryptedAccessToken(encryptionService.encrypt(response.getAccessToken()));
 		if (response.getRefreshToken() != null) {
 			connection.setEncryptedRefreshToken(encryptionService.encrypt(response.getRefreshToken()));
+		} else {
+			// Sem refresh token novo, o antigo pode estar revogado; reaproveitá-lo causaria invalid_grant em ~1h
+			log.warn("Gmail connect: Google did not return a refresh token for user {}", user.getId());
 		}
 		if (response.getExpiresInSeconds() != null) {
 			connection.setTokenExpiresAt(Instant.now().plusSeconds(response.getExpiresInSeconds()));
 		} else {
 			connection.setTokenExpiresAt(Instant.now().plusSeconds(3600));
 		}
+		connection.setEncryptedAppPassword(null);
+		connection.setActive(true);
+
+		return gmailConnectionRepository.save(connection);
+	}
+
+	/**
+	 * Conecta via IMAP com senha de app. Valida as credenciais no Gmail antes de salvar.
+	 *
+	 * @throws IllegalArgumentException se o e-mail ou a senha de app forem recusados pelo Google
+	 */
+	public GmailConnection connectWithAppPassword(User user, String gmailAddress, String appPassword) {
+		String address = gmailAddress.trim().toLowerCase(java.util.Locale.ROOT);
+		try {
+			gmailImapClient.verify(address, appPassword);
+		} catch (AuthenticationFailedException e) {
+			throw new IllegalArgumentException("O Google recusou o e-mail ou a senha de app. Confira os dados e se a verificação em 2 etapas está ativa.", e);
+		} catch (MessagingException e) {
+			log.warn("Gmail IMAP: could not verify credentials for user {}", user.getId(), e);
+			throw new GmailSyncException("Não foi possível falar com o Gmail agora. Tente novamente em instantes.", e);
+		}
+
+		GmailConnection connection = gmailConnectionRepository.findByUserId(user.getId())
+			.orElseGet(() -> GmailConnection.builder().user(user).build());
+		connection.setGmailAddress(address);
+		connection.setEncryptedAppPassword(encryptionService.encrypt(appPassword.replaceAll("\\s+", "")));
+		connection.setEncryptedAccessToken(null);
+		connection.setEncryptedRefreshToken(null);
+		connection.setTokenExpiresAt(null);
 		connection.setActive(true);
 
 		return gmailConnectionRepository.save(connection);
@@ -114,29 +149,109 @@ public class GmailService {
 			return 0;
 		}
 
+		int processed = connection.getEncryptedAppPassword() != null
+			? syncViaImap(connection, userId)
+			: syncViaApi(connection, userId);
+
+		// Reprocessa e-mails já baixados que ainda não possuam candidatura vinculada
+		List<Email> orphans = emailRepository.findAllByUserIdAndApplicationIsNull(userId);
+		for (Email orphan : orphans) {
+			try {
+				emailSyncProcessor.reprocess(orphan);
+				if (orphan.getApplication() != null) {
+					processed++;
+				}
+			} catch (Exception e) {
+				log.warn("Gmail sync: failed reprocessing orphan email {} for user {}", orphan.getId(), userId, e);
+			}
+		}
+
+		connection.setLastSyncedAt(Instant.now());
+		gmailConnectionRepository.save(connection);
+		log.info("Gmail sync done for user {}: processed={}", userId, processed);
+
+		return processed;
+	}
+
+	private int syncViaImap(GmailConnection connection, Long userId) {
+		String appPassword = encryptionService.decrypt(connection.getEncryptedAppPassword());
+
+		List<GmailImapClient.FetchedEmail> emails;
+		try {
+			emails = gmailImapClient.fetchNew(
+				connection.getGmailAddress(),
+				appPassword,
+				SEARCH_QUERY_INBOUND,
+				SEARCH_QUERY_SENT,
+				messageId -> emailRepository.existsByMessageIdAndUserId(messageId, userId)
+			);
+		} catch (AuthenticationFailedException e) {
+			log.warn("Gmail IMAP: authentication failed for user {}: {}", userId, e.getMessage());
+			deactivate(connection);
+			throw new IllegalStateException("A senha de app foi revogada ou é inválida. Gere uma nova senha de app e conecte novamente.", e);
+		} catch (MessagingException e) {
+			log.warn("Gmail IMAP: sync failed for user {}", userId, e);
+			throw new GmailSyncException("Não foi possível acessar o Gmail agora. Tente novamente em instantes.", e);
+		}
+
+		int processed = 0;
+		for (GmailImapClient.FetchedEmail email : emails) {
+			try {
+				emailSyncProcessor.process(
+					userId,
+					email.messageId(),
+					email.direction(),
+					email.subject(),
+					email.fromAddress(),
+					email.toAddress(),
+					email.snippet(),
+					email.rawContent(),
+					email.receivedAt()
+				);
+				processed++;
+			} catch (Exception e) {
+				log.warn("Gmail sync: failed processing message {} for user {}", email.messageId(), userId, e);
+			}
+		}
+		return processed;
+	}
+
+	private int syncViaApi(GmailConnection connection, Long userId) throws IOException {
 		Gmail client;
 		try {
 			client = getGmailClient(connection);
-		} catch (IllegalStateException e) {
+		} catch (IllegalStateException | GmailSyncException e) {
 			throw e;
 		} catch (Exception e) {
-			log.warn("Gmail sync: client auth failed for user {}", userId, e);
-			connection.setActive(false);
-			gmailConnectionRepository.save(connection);
-			throw new IllegalStateException("Sua autorização com o Gmail expirou ou é inválida. Por favor, reconecte sua conta.", e);
+			// Falha de rede/infra ao renovar o token: não invalida a conexão
+			log.warn("Gmail sync: could not build Gmail client for user {}", userId, e);
+			throw new GmailSyncException("Não foi possível falar com o Google agora. Tente novamente em instantes.", e);
 		}
 
 		List<Message> messages;
 		try {
 			messages = fetchAllMatchingMessages(client);
 		} catch (GoogleJsonResponseException e) {
-			if (e.getStatusCode() == 401 || e.getStatusCode() == 403) {
-				log.warn("Gmail sync: Google API rejected request (status={}) for user {}", e.getStatusCode(), userId);
-				connection.setActive(false);
-				gmailConnectionRepository.save(connection);
-				throw new IllegalStateException("Sua autorização com o Gmail expirou ou não possui as permissões necessárias. Por favor, reconecte sua conta.", e);
+			String reason = googleErrorReason(e);
+			log.warn("Gmail sync: Google API rejected request (status={}, reason={}, message={}) for user {}",
+				e.getStatusCode(), reason, e.getDetails() != null ? e.getDetails().getMessage() : e.getMessage(), userId);
+
+			// 401 aqui significa que o Credential já tentou renovar o token e não conseguiu
+			if (e.getStatusCode() == 401) {
+				deactivate(connection);
+				throw new IllegalStateException("Sua autorização com o Gmail expirou ou foi revogada. Por favor, reconecte sua conta.", e);
 			}
-			throw e;
+			if ("insufficientPermissions".equals(reason) || "ACCESS_TOKEN_SCOPE_INSUFFICIENT".equals(reason)) {
+				deactivate(connection);
+				throw new IllegalStateException("A permissão de leitura do Gmail não foi concedida. Reconecte sua conta e marque a opção de acesso aos e-mails.", e);
+			}
+			if ("accessNotConfigured".equals(reason) || "SERVICE_DISABLED".equals(reason)) {
+				throw new GmailSyncException("A Gmail API não está ativada no projeto do Google Cloud. Ative-a no console e tente novamente.", e);
+			}
+			if ("rateLimitExceeded".equals(reason) || "userRateLimitExceeded".equals(reason) || e.getStatusCode() == 429) {
+				throw new GmailSyncException("Limite de requisições do Gmail atingido. Aguarde alguns minutos e tente novamente.", e);
+			}
+			throw new GmailSyncException("O Google recusou a requisição (status " + e.getStatusCode() + "). Tente novamente em instantes.", e);
 		}
 
 		int processed = 0;
@@ -176,24 +291,9 @@ public class GmailService {
 				log.warn("Gmail sync: failed processing message {} for user {}", messageId, userId, e);
 			}
 		}
-
-		// Reprocessa e-mails já baixados que ainda não possuam candidatura vinculada
-		List<Email> orphans = emailRepository.findAllByUserIdAndApplicationIsNull(userId);
-		for (Email orphan : orphans) {
-			try {
-				emailSyncProcessor.reprocess(orphan);
-				if (orphan.getApplication() != null) {
-					processed++;
-				}
-			} catch (Exception e) {
-				log.warn("Gmail sync: failed reprocessing orphan email {} for user {}", orphan.getId(), userId, e);
-			}
+		if (failed > 0) {
+			log.warn("Gmail sync: {} message(s) failed for user {}", failed, userId);
 		}
-
-		connection.setLastSyncedAt(Instant.now());
-		gmailConnectionRepository.save(connection);
-		log.info("Gmail sync done for user {}: processed={}, failed={}", userId, processed, failed);
-
 		return processed;
 	}
 
@@ -288,6 +388,11 @@ public class GmailService {
 
 		// Força refresh do token se estiver expirado ou perto de expirar (1 minuto de margem)
 		if (connection.getTokenExpiresAt() == null || connection.getTokenExpiresAt().isBefore(Instant.now().plusSeconds(60))) {
+			if (refreshToken == null) {
+				log.warn("Gmail token expired and no refresh token stored for user {}", connection.getUser().getId());
+				deactivate(connection);
+				throw new IllegalStateException("Sua autorização com o Gmail expirou. Por favor, reconecte sua conta.");
+			}
 			try {
 				credential.refreshToken();
 				connection.setEncryptedAccessToken(encryptionService.encrypt(credential.getAccessToken()));
@@ -298,10 +403,16 @@ public class GmailService {
 				}
 				gmailConnectionRepository.save(connection);
 			} catch (TokenResponseException e) {
-				log.warn("Gmail token refresh failed for user {}: {}", connection.getUser().getId(), e.getDetails() != null ? e.getDetails().getError() : e.getMessage());
-				connection.setActive(false);
-				gmailConnectionRepository.save(connection);
-				throw new IllegalStateException("Sua autorização com o Gmail expirou ou foi revogada. Por favor, reconecte sua conta.", e);
+				String error = e.getDetails() != null ? e.getDetails().getError() : null;
+				log.warn("Gmail token refresh failed for user {}: error={}, description={}", connection.getUser().getId(),
+					error, e.getDetails() != null ? e.getDetails().getErrorDescription() : e.getMessage());
+				// invalid_grant = refresh token revogado/expirado (ex.: app OAuth em modo "Testing" expira em 7 dias)
+				if ("invalid_grant".equals(error)) {
+					deactivate(connection);
+					throw new IllegalStateException("Sua autorização com o Gmail expirou ou foi revogada. Por favor, reconecte sua conta.", e);
+				}
+				// invalid_client/unauthorized_client etc. são problemas de configuração do servidor, não da conta
+				throw new GmailSyncException("Falha ao renovar o acesso ao Gmail (" + error + "). Verifique GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET.", e);
 			}
 		}
 
@@ -312,6 +423,22 @@ public class GmailService {
 		)
 		.setApplicationName("jobtracker")
 		.build();
+	}
+
+	private void deactivate(GmailConnection connection) {
+		connection.setActive(false);
+		gmailConnectionRepository.save(connection);
+	}
+
+	private String googleErrorReason(GoogleJsonResponseException e) {
+		if (e.getDetails() == null) {
+			return null;
+		}
+		if (e.getDetails().getErrors() != null && !e.getDetails().getErrors().isEmpty()) {
+			return e.getDetails().getErrors().get(0).getReason();
+		}
+		Object status = e.getDetails().get("status");
+		return status != null ? status.toString() : null;
 	}
 
 	private String getHeader(Message message, String name) {
@@ -349,7 +476,7 @@ public class GmailService {
 		return "";
 	}
 
-	private String stripHtml(String html) {
+	static String stripHtml(String html) {
 		String text = html.replaceAll("<br\\s*/?>", "\n")
 			.replaceAll("<[^>]+>", " ")
 			.replaceAll("\\s+", " ")

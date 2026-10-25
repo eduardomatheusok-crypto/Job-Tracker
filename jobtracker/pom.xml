@@ -120,6 +120,17 @@
 			<version>v1-rev20240520-2.0.0</version>
 		</dependency>
 
+		<!-- IMAP do Gmail (X-GM-RAW / X-GM-MSGID) para conexão via senha de app -->
+		<dependency>
+			<groupId>org.eclipse.angus</groupId>
+			<artifactId>gimap</artifactId>
+			<version>${angus-mail.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.angus</groupId>
+			<artifactId>angus-mail</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

@@ -6,7 +6,6 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +14,7 @@ import jobtracker.entity.User;
 import jobtracker.integration.gmail.EmailParserService;
 import jobtracker.integration.gmail.GmailOAuthService;
 import jobtracker.integration.gmail.GmailService;
+import jobtracker.integration.gmail.GmailSyncException;
 import jobtracker.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,24 +29,6 @@ import org.springframework.web.context.WebApplicationContext;
 
 import java.util.Optional;
 
-/**
- * Testes de integração para a funcionalidade Gmail (Fase 11).
- *
- * <p>As chamadas às APIs externas do Google (OAuth e Gmail) são completamente
- * mockadas com {@code @MockBean}, garantindo que os testes sejam rápidos,
- * determinísticos e não dependam de credenciais reais.
- *
- * <p>Cenários cobertos:
- * <ol>
- *   <li>GET /api/gmail/auth-url – retorna URL de autorização para usuário autenticado
- *   <li>GET /api/gmail/callback – callback público sem JWT conecta o usuário
- *   <li>GET /api/gmail/callback – código inválido retorna 400
- *   <li>POST /api/gmail/sync   – sincroniza e-mails e retorna contagem
- *   <li>GET /api/gmail/status  – retorna status conectado/desconectado
- *   <li>POST /api/gmail/disconnect – desconecta o usuário
- *   <li>GET /api/gmail/auth-url – sem JWT retorna 401/403
- * </ol>
- */
 @SpringBootTest
 class GmailIntegrationTests {
 
@@ -270,5 +252,71 @@ class GmailIntegrationTests {
 			.andExpect(jsonPath("$.message").value("Gmail desconectado com sucesso."));
 
 		verify(gmailService).disconnectUser(anyLong());
+	}
+
+	// -----------------------------------------------------------------------
+	// Teste: POST /api/gmail/connect-app-password – credenciais válidas
+	// -----------------------------------------------------------------------
+	@Test
+	void connectAppPassword_withValidCredentials_returnsConnectedAddress() throws Exception {
+		register("Eve Gmail", "eve.gmail@example.com", "password123");
+		String token = loginAndGetToken("eve.gmail@example.com", "password123");
+		User eve = userRepository.findByEmailIgnoreCase("eve.gmail@example.com").orElseThrow();
+
+		GmailConnection conn = GmailConnection.builder()
+			.user(eve)
+			.gmailAddress("eve@gmail.com")
+			.active(true)
+			.build();
+		when(gmailService.connectWithAppPassword(any(User.class), eq("eve@gmail.com"), eq("abcd efgh ijkl mnop")))
+			.thenReturn(conn);
+
+		mockMvc.perform(post("/api/gmail/connect-app-password")
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{"email":"eve@gmail.com","appPassword":"abcd efgh ijkl mnop"}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.gmailAddress").value("eve@gmail.com"));
+	}
+
+	// -----------------------------------------------------------------------
+	// Teste: POST /api/gmail/connect-app-password – senha recusada pelo Google
+	// -----------------------------------------------------------------------
+	@Test
+	void connectAppPassword_withRejectedCredentials_returnsBadRequest() throws Exception {
+		register("Fay Gmail", "fay.gmail@example.com", "password123");
+		String token = loginAndGetToken("fay.gmail@example.com", "password123");
+
+		when(gmailService.connectWithAppPassword(any(User.class), anyString(), anyString()))
+			.thenThrow(new IllegalArgumentException("O Google recusou o e-mail ou a senha de app."));
+
+		mockMvc.perform(post("/api/gmail/connect-app-password")
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{"email":"fay@gmail.com","appPassword":"wrong"}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.message").value("O Google recusou o e-mail ou a senha de app."));
+	}
+
+	// -----------------------------------------------------------------------
+	// Teste: POST /api/gmail/sync – falha temporária não marca como desconectado
+	// -----------------------------------------------------------------------
+	@Test
+	void syncEmails_withTransientFailure_returnsBadGatewayWithoutDisconnecting() throws Exception {
+		register("Gus Gmail", "gus.gmail@example.com", "password123");
+		String token = loginAndGetToken("gus.gmail@example.com", "password123");
+
+		when(gmailService.syncEmails(anyLong()))
+			.thenThrow(new GmailSyncException("Não foi possível acessar o Gmail agora.", null));
+
+		mockMvc.perform(post("/api/gmail/sync")
+				.header("Authorization", "Bearer " + token))
+			.andExpect(status().isBadGateway())
+			.andExpect(jsonPath("$.message").value("Não foi possível acessar o Gmail agora."))
+			.andExpect(jsonPath("$.connected").doesNotExist());
 	}
 }
