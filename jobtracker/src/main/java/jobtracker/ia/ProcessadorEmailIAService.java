@@ -74,9 +74,11 @@ public class ProcessadorEmailIAService {
 		try {
 			classificacao = classificador.classificar(email.getFromAddress(), email.getSubject(), email.getRawContent());
 		} catch (Exception e) {
-			boolean limite = String.valueOf(e.getMessage()).contains("429");
+			// O Spring AI embrulha o erro do Gemini em "Failed to generate content"; o motivo real está na causa raiz
+			String causa = descreverCausaRaiz(e);
+			boolean limite = causa.contains("429") || causa.contains("RESOURCE_EXHAUSTED");
 			log.warn("IA: falha ao classificar e-mail {} ({}): {}",
-				email.getMessageId(), limite ? "limite de requisições" : "erro", e.getMessage());
+				email.getMessageId(), limite ? "limite de requisições" : "erro", causa);
 			return Resultado.FALHA;
 		}
 
@@ -152,7 +154,10 @@ public class ProcessadorEmailIAService {
 		email.setApplication(application);
 
 		ApplicationStatus anterior = application.getStatus();
-		if (existente.isPresent() && anterior != c.novoStatus()) {
+		// E-mails são classificados do mais novo ao mais antigo: um e-mail antigo só vincula, sem regredir o status
+		boolean existeEmailMaisNovo = existente.isPresent()
+			&& emailRepository.existsByApplicationIdAndReceivedAtAfter(application.getId(), email.getReceivedAt());
+		if (existente.isPresent() && anterior != c.novoStatus() && !existeEmailMaisNovo) {
 			application.setStatus(c.novoStatus());
 			applicationRepository.save(application);
 			applicationHistoryService.recordAgentChange(application, anterior, c.novoStatus(), "status", nota);
@@ -174,7 +179,16 @@ public class ProcessadorEmailIAService {
 		return application;
 	}
 
-	private static String curto(String valor) {
+	static String descreverCausaRaiz(Throwable erro) {
+		Throwable raiz = erro;
+		while (raiz.getCause() != null && raiz.getCause() != raiz) {
+			raiz = raiz.getCause();
+		}
+		String descricao = raiz.getClass().getSimpleName() + ": " + raiz.getMessage();
+		return raiz == erro ? descricao : erro.getMessage() + " <- " + descricao;
+	}
+
+		private static String curto(String valor) {
 		return limitar(valor, MAX_TEXTO_CURTO);
 	}
 

@@ -23,6 +23,9 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
 	boolean existsByMessageIdAndUserId(String messageId, Long userId);
 
+	/** Há e-mail vinculado à candidatura mais recente que {@code receivedAt}? (evita regredir o status) */
+	boolean existsByApplicationIdAndReceivedAtAfter(Long applicationId, java.time.Instant receivedAt);
+
 	Optional<Email> findFirstByUserIdAndDirectionOrderByReceivedAtDesc(Long userId, jobtracker.entity.EmailDirection direction);
 
 	@Query("SELECT e.receivedAt FROM Email e WHERE e.application.id = :applicationId ORDER BY e.receivedAt ASC")
@@ -30,8 +33,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
 	java.util.List<Email> findAllByUserIdAndApplicationIsNull(Long userId);
 
-	/** E-mails recebidos ainda não classificados pela IA, do mais antigo ao mais novo. */
+	/** E-mails recebidos ainda não classificados pela IA, do mais novo ao mais antigo. */
 	@Query("SELECT e FROM Email e WHERE e.user.id = :userId AND e.direction = jobtracker.entity.EmailDirection.INBOUND "
-		+ "AND NOT EXISTS (SELECT 1 FROM EmailProcessado p WHERE p.gmailId = e.messageId) ORDER BY e.receivedAt ASC")
+		+ "AND NOT EXISTS (SELECT 1 FROM EmailProcessado p WHERE p.gmailId = e.messageId) ORDER BY e.receivedAt DESC")
 	java.util.List<Email> findPendentesDeClassificacao(@Param("userId") Long userId, org.springframework.data.domain.Pageable limite);
 }

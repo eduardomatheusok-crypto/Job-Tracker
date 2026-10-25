@@ -216,9 +216,9 @@ public class GmailService {
 	}
 
 	/**
-	 * Classifica com IA os e-mails recebidos ainda não processados (do mais antigo ao mais novo, para o
-	 * status final refletir o e-mail mais recente). Falhas do LLM não interrompem o lote: o e-mail fica
-	 * pendente e é tentado de novo na próxima sincronização.
+	 * Classifica com IA os e-mails recebidos ainda não processados, do mais novo ao mais antigo (o
+	 * {@link ProcessadorEmailIAService} não deixa um e-mail antigo regredir um status mais novo). Falhas do
+	 * LLM não interrompem o lote: o e-mail fica pendente e é tentado de novo na próxima sincronização.
 	 */
 	private int classifyPendingEmails(Long userId) {
 		List<Email> pending = emailRepository.findPendentesDeClassificacao(userId, PageRequest.of(0, maxEmailsPerSync));

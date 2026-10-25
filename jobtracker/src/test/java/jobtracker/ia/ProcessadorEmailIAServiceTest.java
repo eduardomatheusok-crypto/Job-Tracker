@@ -220,4 +220,27 @@ class ProcessadorEmailIAServiceTest {
 		verifyNoInteractions(classificador);
 		verify(emailProcessadoRepository, never()).save(any());
 	}
+
+	@Test
+	void descreverCausaRaiz_mostraOErroRealDoGemini() {
+		Exception erro = new RuntimeException("Failed to generate content",
+			new IllegalStateException("wrapper", new RuntimeException("400 Bad Request. API key not valid")));
+
+		assertThat(ProcessadorEmailIAService.descreverCausaRaiz(erro))
+			.isEqualTo("Failed to generate content <- RuntimeException: 400 Bad Request. API key not valid");
+	}
+
+	@Test
+	void emailMaisAntigoQueOUltimoVinculado_naoRegrideOStatus() {
+		Application app = candidaturaExistente(ApplicationStatus.INTERVIEW);
+		when(emailRepository.existsByApplicationIdAndReceivedAtAfter(app.getId(), email.getReceivedAt())).thenReturn(true);
+		classificarComo(TipoEmail.ATUALIZACAO_CANDIDATURA, ApplicationStatus.APPLIED, "Acme", 0.95);
+
+		assertThat(processador.processar(email)).isEqualTo(ProcessadorEmailIAService.Resultado.STATUS_ATUALIZADO);
+
+		assertThat(app.getStatus()).isEqualTo(ApplicationStatus.INTERVIEW);
+		assertThat(email.getApplication()).isSameAs(app);
+		verifyNoInteractions(applicationHistoryService);
+		marcacaoSalva();
+	}
 }

@@ -63,9 +63,9 @@ public class GmailImapClient {
 	}
 
 	/**
-	 * Busca os e-mails recebidos que casam com {@code query} e ainda não são conhecidos, do mais antigo
-	 * ao mais novo, baixando no máximo {@code maxDownloads}. Os que passarem do limite ficam para a
-	 * próxima chamada (a janela de datas do chamador parte do e-mail mais recente já salvo).
+	 * Busca os e-mails recebidos que casam com {@code query} e ainda não são conhecidos, do mais novo
+	 * ao mais antigo, baixando no máximo {@code maxDownloads}. Com muitos resultados, os mais antigos
+	 * ficam de fora: o que importa para o status das candidaturas são os e-mails recentes.
 	 *
 	 * @param isKnown retorna true para ids já persistidos (o conteúdo deles não é baixado)
 	 */
@@ -80,7 +80,7 @@ public class GmailImapClient {
 			GmailFolder allMail = findAllMailFolder(store);
 			allMail.open(Folder.READ_ONLY);
 			try {
-				// Resultados vêm em ordem de chegada (mais antigo primeiro)
+				// Resultados vêm em ordem de chegada (mais antigo primeiro); percorremos do fim para o início
 				Message[] found = allMail.search(new GmailRawSearchTerm(query));
 
 				FetchProfile idProfile = new FetchProfile();
@@ -88,7 +88,8 @@ public class GmailImapClient {
 				allMail.fetch(found, idProfile);
 
 				Map<String, Message> candidates = new LinkedHashMap<>();
-				for (Message m : found) {
+				for (int i = found.length - 1; i >= 0; i--) {
+					Message m = found[i];
 					String id = messageId(m);
 					if (candidates.size() >= maxDownloads) {
 						break;
