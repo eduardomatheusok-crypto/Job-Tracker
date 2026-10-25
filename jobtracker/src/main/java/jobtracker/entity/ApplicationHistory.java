@@ -54,6 +54,11 @@ public class ApplicationHistory {
 	@Column(length = 2000)
 	private String note;
 
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	@Builder.Default
+	private OrigemAlteracao origem = OrigemAlteracao.USUARIO;
+
 	@Column(nullable = false, updatable = false)
 	private Instant changedAt;
 

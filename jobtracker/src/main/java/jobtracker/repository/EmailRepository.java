@@ -27,4 +27,9 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 	java.util.List<java.time.Instant> findReceivedAtOrderedAsc(@Param("applicationId") Long applicationId);
 
 	java.util.List<Email> findAllByUserIdAndApplicationIsNull(Long userId);
+
+	/** E-mails recebidos ainda não classificados pela IA, do mais antigo ao mais novo. */
+	@Query("SELECT e FROM Email e WHERE e.user.id = :userId AND e.direction = jobtracker.entity.EmailDirection.INBOUND "
+		+ "AND NOT EXISTS (SELECT 1 FROM EmailProcessado p WHERE p.gmailId = e.messageId) ORDER BY e.receivedAt ASC")
+	java.util.List<Email> findPendentesDeClassificacao(@Param("userId") Long userId, org.springframework.data.domain.Pageable limite);
 }

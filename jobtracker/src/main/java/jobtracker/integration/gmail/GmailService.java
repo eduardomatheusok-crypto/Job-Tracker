@@ -25,6 +25,7 @@ import jobtracker.entity.Email;
 import jobtracker.entity.EmailDirection;
 import jobtracker.entity.GmailConnection;
 import jobtracker.entity.User;
+import jobtracker.ia.ProcessadorEmailIAService;
 import jobtracker.repository.EmailRepository;
 import jobtracker.repository.GmailConnectionRepository;
 import jobtracker.service.UserService;
@@ -34,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import com.google.api.client.auth.oauth2.TokenResponseException;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +58,10 @@ public class GmailService {
 	@Value("${google.client-secret}")
 	private String clientSecret;
 
+	/** Limita chamadas ao Gemini por sincronização (cota do plano gratuito); o restante fica para a próxima. */
+	@Value("${app.ia.max-emails-por-sync:30}")
+	private int maxEmailsPerSync;
+
 	private final GmailOAuthService gmailOAuthService;
 	private final GmailConnectionRepository gmailConnectionRepository;
 	private final UserService userService;
@@ -63,6 +69,7 @@ public class GmailService {
 	private final EmailRepository emailRepository;
 	private final EmailSyncProcessor emailSyncProcessor;
 	private final GmailImapClient gmailImapClient;
+	private final ProcessadorEmailIAService processadorEmailIAService;
 
 	public GmailConnection connectUser(String code, String state) throws IOException {
 		String email = gmailOAuthService.decryptState(state);
@@ -149,28 +156,45 @@ public class GmailService {
 			return 0;
 		}
 
-		int processed = connection.getEncryptedAppPassword() != null
+		int fetched = connection.getEncryptedAppPassword() != null
 			? syncViaImap(connection, userId)
 			: syncViaApi(connection, userId);
 
-		// Reprocessa e-mails já baixados que ainda não possuam candidatura vinculada
-		List<Email> orphans = emailRepository.findAllByUserIdAndApplicationIsNull(userId);
-		for (Email orphan : orphans) {
-			try {
-				emailSyncProcessor.reprocess(orphan);
-				if (orphan.getApplication() != null) {
-					processed++;
-				}
-			} catch (Exception e) {
-				log.warn("Gmail sync: failed reprocessing orphan email {} for user {}", orphan.getId(), userId, e);
-			}
-		}
+		int classified = classifyPendingEmails(userId);
 
 		connection.setLastSyncedAt(Instant.now());
 		gmailConnectionRepository.save(connection);
-		log.info("Gmail sync done for user {}: processed={}", userId, processed);
+		log.info("Gmail sync done for user {}: fetched={}, classified={}", userId, fetched, classified);
 
-		return processed;
+		return classified;
+	}
+
+	/**
+	 * Classifica com IA os e-mails recebidos ainda não processados (do mais antigo ao mais novo, para o
+	 * status final refletir o e-mail mais recente). Falhas do LLM não interrompem o lote: o e-mail fica
+	 * pendente e é tentado de novo na próxima sincronização.
+	 */
+	private int classifyPendingEmails(Long userId) {
+		List<Email> pending = emailRepository.findPendentesDeClassificacao(userId, PageRequest.of(0, maxEmailsPerSync));
+		int classified = 0;
+		int failed = 0;
+		for (Email email : pending) {
+			try {
+				ProcessadorEmailIAService.Resultado resultado = processadorEmailIAService.processar(email);
+				if (resultado == ProcessadorEmailIAService.Resultado.FALHA) {
+					failed++;
+				} else if (resultado != ProcessadorEmailIAService.Resultado.JA_PROCESSADO) {
+					classified++;
+				}
+			} catch (Exception e) {
+				failed++;
+				log.warn("Gmail sync: failed applying AI classification to email {} for user {}", email.getId(), userId, e);
+			}
+		}
+		if (failed > 0) {
+			log.warn("Gmail sync: {} email(s) left pending classification for user {}", failed, userId);
+		}
+		return classified;
 	}
 
 	private int syncViaImap(GmailConnection connection, Long userId) {

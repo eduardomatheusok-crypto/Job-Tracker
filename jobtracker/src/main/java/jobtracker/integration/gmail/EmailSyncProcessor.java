@@ -11,10 +11,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Processa <b>um</b> e-mail em uma transação própria (REQUIRES_NEW).
+ * Persiste <b>um</b> e-mail em uma transação própria (REQUIRES_NEW), isolando falhas por mensagem.
  *
- * <p>Isola a falha por mensagem: se o parsing de um e-mail lançar uma exceção,
- * apenas aquele e-mail é revertido e o restante da sincronização continua.
+ * <p>A classificação (Gemini) acontece depois, em {@link jobtracker.ia.ProcessadorEmailIAService}.
  */
 @Service
 @RequiredArgsConstructor
@@ -22,7 +21,6 @@ public class EmailSyncProcessor {
 
 	private final EmailRepository emailRepository;
 	private final UserRepository userRepository;
-	private final EmailParserService emailParserService;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void process(
@@ -48,16 +46,6 @@ public class EmailSyncProcessor {
 			.receivedAt(receivedAt)
 			.build();
 
-		Email savedEmail = emailRepository.save(email);
-		emailParserService.parseAndProcess(savedEmail);
-		savedEmail.setProcessedAt(Instant.now());
-		emailRepository.save(savedEmail);
-	}
-
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public void reprocess(Email email) {
-		emailParserService.parseAndProcess(email);
-		email.setProcessedAt(Instant.now());
 		emailRepository.save(email);
 	}
 }

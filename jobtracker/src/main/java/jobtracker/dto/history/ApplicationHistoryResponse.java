@@ -2,6 +2,7 @@ package jobtracker.dto.history;
 
 import java.time.Instant;
 import jobtracker.entity.ApplicationStatus;
+import jobtracker.entity.OrigemAlteracao;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,5 +23,6 @@ public class ApplicationHistoryResponse {
 	private ApplicationStatus newStatus;
 	private String changedField;
 	private String note;
+	private OrigemAlteracao origem;
 	private Instant changedAt;
 }

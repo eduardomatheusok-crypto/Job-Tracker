@@ -6,6 +6,7 @@ import jobtracker.dto.history.ApplicationHistoryResponse;
 import jobtracker.entity.Application;
 import jobtracker.entity.ApplicationHistory;
 import jobtracker.entity.ApplicationStatus;
+import jobtracker.entity.OrigemAlteracao;
 import jobtracker.entity.User;
 import jobtracker.repository.ApplicationRepository;
 import jobtracker.repository.ApplicationHistoryRepository;
@@ -22,7 +23,7 @@ public class ApplicationHistoryService {
 	private final ApplicationHistoryRepository applicationHistoryRepository;
 
 	public ApplicationHistory recordCreation(Application application, User actor) {
-		return saveHistory(application, actor, null, application.getStatus(), "created", "Application created");
+		return saveHistory(application, actor, null, application.getStatus(), "created", "Application created", OrigemAlteracao.USUARIO);
 	}
 
 	public ApplicationHistory recordUpdate(
@@ -35,11 +36,22 @@ public class ApplicationHistoryService {
 		String note = changedFields == null || changedFields.isEmpty()
 			? "Application updated"
 			: "Updated fields: " + String.join(", ", changedFields);
-		return saveHistory(application, actor, previousStatus, newStatus, joinFields(changedFields), note);
+		return saveHistory(application, actor, previousStatus, newStatus, joinFields(changedFields), note, OrigemAlteracao.USUARIO);
+	}
+
+	/** Mudança feita pelo agente de IA (sem usuário responsável), com origem {@link OrigemAlteracao#AGENTE}. */
+	public ApplicationHistory recordAgentChange(
+		Application application,
+		ApplicationStatus previousStatus,
+		ApplicationStatus newStatus,
+		String changedField,
+		String note
+	) {
+		return saveHistory(application, null, previousStatus, newStatus, changedField, note, OrigemAlteracao.AGENTE);
 	}
 
 	public ApplicationHistory recordDeletion(Application application, User actor) {
-		return saveHistory(application, actor, application.getStatus(), application.getStatus(), "deleted", "Application deleted");
+		return saveHistory(application, actor, application.getStatus(), application.getStatus(), "deleted", "Application deleted", OrigemAlteracao.USUARIO);
 	}
 
 	@Transactional(readOnly = true)
@@ -65,6 +77,7 @@ public class ApplicationHistoryService {
 			.newStatus(history.getNewStatus())
 			.changedField(history.getChangedField())
 			.note(history.getNote())
+			.origem(history.getOrigem())
 			.changedAt(history.getChangedAt())
 			.build();
 	}
@@ -79,7 +92,8 @@ public class ApplicationHistoryService {
 		ApplicationStatus previousStatus,
 		ApplicationStatus newStatus,
 		String changedField,
-		String note
+		String note,
+		OrigemAlteracao origem
 	) {
 		Application managedApplication = applicationRepository.getReferenceById(application.getId());
 		ApplicationHistory history = ApplicationHistory.builder()
@@ -89,6 +103,7 @@ public class ApplicationHistoryService {
 			.newStatus(newStatus)
 			.changedField(changedField)
 			.note(note)
+			.origem(origem)
 			.build();
 
 		return applicationHistoryRepository.save(history);
