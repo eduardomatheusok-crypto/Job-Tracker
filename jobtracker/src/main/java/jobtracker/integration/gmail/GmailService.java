@@ -13,6 +13,7 @@ import com.google.api.services.gmail.model.Message;
 import com.google.api.services.gmail.model.MessagePart;
 import com.google.api.services.gmail.model.MessagePartHeader;
 import jakarta.mail.AuthenticationFailedException;
+import jakarta.mail.FolderNotFoundException;
 import jakarta.mail.MessagingException;
 import jakarta.persistence.EntityNotFoundException;
 import java.io.IOException;
@@ -51,6 +52,17 @@ public class GmailService {
 			+ "heroku.com OR aws.amazon.com OR mailchimp.com OR sendgrid.net OR statuspage.io)";
 
 	private static final String SEARCH_QUERY_SENT = "label:sent";
+
+	/**
+	 * Mesma busca de {@link #SEARCH_QUERY_INBOUND} para o IMAP (X-GM-RAW), só com ASCII e sem aspas: com acentos
+	 * o cliente envia "CHARSET UTF-8" + literal, e aspas internas exigem escape; o Gmail responde
+	 * "BAD Could not parse command". A busca do Gmail ignora acentos, então "inscricao" também acha "inscrição".
+	 */
+	static final String SEARCH_QUERY_INBOUND_IMAP =
+		"(candidatura OR vaga OR vagas OR (processo seletivo) OR entrevista OR entrevistas OR application OR interview "
+			+ "OR inscricao OR oportunidade OR recrutamento OR recruiting OR hiring) "
+			+ "-from:(render.com OR vercel.com OR netlify.com OR github.com OR gitlab.com OR digitalocean.com OR "
+			+ "heroku.com OR aws.amazon.com OR mailchimp.com OR sendgrid.net OR statuspage.io)";
 
 	@Value("${google.client-id}")
 	private String clientId;
@@ -205,7 +217,7 @@ public class GmailService {
 			emails = gmailImapClient.fetchNew(
 				connection.getGmailAddress(),
 				appPassword,
-				SEARCH_QUERY_INBOUND,
+				SEARCH_QUERY_INBOUND_IMAP,
 				SEARCH_QUERY_SENT,
 				messageId -> emailRepository.existsByMessageIdAndUserId(messageId, userId)
 			);
@@ -213,6 +225,9 @@ public class GmailService {
 			log.warn("Gmail IMAP: authentication failed for user {}: {}", userId, e.getMessage());
 			deactivate(connection);
 			throw new IllegalStateException("A senha de app foi revogada ou é inválida. Gere uma nova senha de app e conecte novamente.", e);
+		} catch (FolderNotFoundException e) {
+			log.warn("Gmail IMAP: All Mail folder not visible for user {}", userId);
+			throw new GmailSyncException("A pasta \"Todos os e-mails\" está oculta no IMAP. No Gmail, vá em Configurações → Marcadores e marque \"Mostrar no IMAP\" em \"Todos os e-mails\".", e);
 		} catch (MessagingException e) {
 			log.warn("Gmail IMAP: sync failed for user {}", userId, e);
 			throw new GmailSyncException("Não foi possível acessar o Gmail agora. Tente novamente em instantes.", e);

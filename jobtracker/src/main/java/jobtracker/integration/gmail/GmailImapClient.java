@@ -2,6 +2,7 @@ package jobtracker.integration.gmail;
 
 import jakarta.mail.Address;
 import jakarta.mail.FetchProfile;
+import jakarta.mail.FolderNotFoundException;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
@@ -137,7 +138,7 @@ public class GmailImapClient {
 				return (GmailFolder) folder;
 			}
 		}
-		throw new MessagingException("Pasta \"Todos os e-mails\" não encontrada. Verifique se ela está visível no IMAP do Gmail.");
+		throw new FolderNotFoundException(store.getDefaultFolder(), "Pasta \"Todos os e-mails\" (\\All) não encontrada no IMAP");
 	}
 
 	private String messageId(Message message) throws MessagingException {
