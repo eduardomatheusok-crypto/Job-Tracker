@@ -23,6 +23,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
 	boolean existsByMessageIdAndUserId(String messageId, Long userId);
 
+	Optional<Email> findFirstByUserIdAndDirectionOrderByReceivedAtDesc(Long userId, jobtracker.entity.EmailDirection direction);
+
 	@Query("SELECT e.receivedAt FROM Email e WHERE e.application.id = :applicationId ORDER BY e.receivedAt ASC")
 	java.util.List<java.time.Instant> findReceivedAtOrderedAsc(@Param("applicationId") Long applicationId);
 

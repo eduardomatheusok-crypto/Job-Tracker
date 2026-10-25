@@ -19,9 +19,12 @@ import jakarta.persistence.EntityNotFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import jobtracker.entity.Email;
 import jobtracker.entity.EmailDirection;
 import jobtracker.entity.GmailConnection;
@@ -73,6 +76,17 @@ public class GmailService {
 	/** Limita chamadas ao Gemini por sincronização (cota do plano gratuito); o restante fica para a próxima. */
 	@Value("${app.ia.max-emails-por-sync:30}")
 	private int maxEmailsPerSync;
+
+	/** Primeira sincronização IMAP (sem e-mails salvos): quantos dias para trás buscar. */
+	@Value("${app.gmail.sync.initial-window-days:90}")
+	private int initialWindowDays;
+
+	/** Máximo de e-mails baixados por sincronização IMAP; o restante vem nas próximas. */
+	@Value("${app.gmail.sync.max-downloads:100}")
+	private int maxDownloadsPerSync;
+
+	private static final int IMAP_WINDOW_MARGIN_DAYS = 2;
+	private static final java.time.format.DateTimeFormatter IMAP_DATE_FORMAT = java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
 	private final GmailOAuthService gmailOAuthService;
 	private final GmailConnectionRepository gmailConnectionRepository;
@@ -217,9 +231,9 @@ public class GmailService {
 			emails = gmailImapClient.fetchNew(
 				connection.getGmailAddress(),
 				appPassword,
-				SEARCH_QUERY_INBOUND_IMAP,
-				SEARCH_QUERY_SENT,
-				messageId -> emailRepository.existsByMessageIdAndUserId(messageId, userId)
+				SEARCH_QUERY_INBOUND_IMAP + " " + imapDateFilter(newestInboundReceivedAt(userId), LocalDate.now(ZoneOffset.UTC), initialWindowDays),
+				messageId -> emailRepository.existsByMessageIdAndUserId(messageId, userId),
+				maxDownloadsPerSync
 			);
 		} catch (AuthenticationFailedException e) {
 			log.warn("Gmail IMAP: authentication failed for user {}: {}", userId, e.getMessage());
@@ -253,6 +267,23 @@ public class GmailService {
 			}
 		}
 		return processed;
+	}
+
+	private Optional<Instant> newestInboundReceivedAt(Long userId) {
+		return emailRepository.findFirstByUserIdAndDirectionOrderByReceivedAtDesc(userId, EmailDirection.INBOUND)
+			.map(Email::getReceivedAt);
+	}
+
+	/**
+	 * Janela de datas da busca IMAP: a partir do e-mail recebido mais recente já salvo (com margem, pois o
+	 * "after:" do Gmail trabalha com datas inteiras e fuso do Gmail) ou, na primeira sincronização, os últimos
+	 * {@code initialWindowDays} dias. Formato só com ASCII, exigido pelo X-GM-RAW.
+	 */
+	static String imapDateFilter(Optional<Instant> newestReceivedAt, LocalDate today, int initialWindowDays) {
+		LocalDate start = newestReceivedAt
+			.map(instant -> LocalDate.ofInstant(instant, ZoneOffset.UTC).minusDays(IMAP_WINDOW_MARGIN_DAYS))
+			.orElse(today.minusDays(initialWindowDays));
+		return "after:" + start.format(IMAP_DATE_FORMAT);
 	}
 
 	private int syncViaApi(GmailConnection connection, Long userId) throws IOException {

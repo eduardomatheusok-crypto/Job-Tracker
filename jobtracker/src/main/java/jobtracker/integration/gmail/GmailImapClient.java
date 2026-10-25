@@ -15,12 +15,10 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 import java.util.function.Predicate;
 import jobtracker.entity.EmailDirection;
 import org.eclipse.angus.mail.gimap.GmailFolder;
@@ -65,40 +63,42 @@ public class GmailImapClient {
 	}
 
 	/**
-	 * Busca os e-mails que casam com {@code inboundQuery} ou {@code sentQuery} e ainda não são conhecidos.
+	 * Busca os e-mails recebidos que casam com {@code query} e ainda não são conhecidos, do mais antigo
+	 * ao mais novo, baixando no máximo {@code maxDownloads}. Os que passarem do limite ficam para a
+	 * próxima chamada (a janela de datas do chamador parte do e-mail mais recente já salvo).
 	 *
 	 * @param isKnown retorna true para ids já persistidos (o conteúdo deles não é baixado)
 	 */
 	public List<FetchedEmail> fetchNew(
 		String address,
 		String appPassword,
-		String inboundQuery,
-		String sentQuery,
-		Predicate<String> isKnown
+		String query,
+		Predicate<String> isKnown,
+		int maxDownloads
 	) throws MessagingException {
 		try (Store store = connect(address, appPassword)) {
 			GmailFolder allMail = findAllMailFolder(store);
 			allMail.open(Folder.READ_ONLY);
 			try {
-				Message[] inbound = allMail.search(new GmailRawSearchTerm(inboundQuery));
-				Message[] sent = allMail.search(new GmailRawSearchTerm(sentQuery));
+				// Resultados vêm em ordem de chegada (mais antigo primeiro)
+				Message[] found = allMail.search(new GmailRawSearchTerm(query));
 
 				FetchProfile idProfile = new FetchProfile();
 				idProfile.add(GmailFolder.FetchProfileItem.MSGID);
-				allMail.fetch(inbound, idProfile);
-				allMail.fetch(sent, idProfile);
+				allMail.fetch(found, idProfile);
 
-				Set<String> sentIds = new HashSet<>();
 				Map<String, Message> candidates = new LinkedHashMap<>();
-				for (Message m : sent) {
+				for (Message m : found) {
 					String id = messageId(m);
-					sentIds.add(id);
-					candidates.putIfAbsent(id, m);
+					if (candidates.size() >= maxDownloads) {
+						break;
+					}
+					if (!isKnown.test(id)) {
+						candidates.putIfAbsent(id, m);
+					}
 				}
-				for (Message m : inbound) {
-					candidates.putIfAbsent(messageId(m), m);
-				}
-				candidates.keySet().removeIf(isKnown);
+				log.info("Gmail IMAP: {} message(s) matched, {} new to download (limit {})",
+					found.length, candidates.size(), maxDownloads);
 
 				Message[] toFetch = candidates.values().toArray(Message[]::new);
 				FetchProfile contentProfile = new FetchProfile();
@@ -108,7 +108,7 @@ public class GmailImapClient {
 				List<FetchedEmail> result = new ArrayList<>();
 				for (Map.Entry<String, Message> entry : candidates.entrySet()) {
 					try {
-						result.add(toFetchedEmail(entry.getKey(), entry.getValue(), sentIds.contains(entry.getKey())));
+						result.add(toFetchedEmail(entry.getKey(), entry.getValue()));
 					} catch (MessagingException | IOException | RuntimeException e) {
 						log.warn("Gmail IMAP: failed reading message {}", entry.getKey(), e);
 					}
@@ -145,7 +145,7 @@ public class GmailImapClient {
 		return Long.toHexString(((GmailMessage) message).getMsgId());
 	}
 
-	private FetchedEmail toFetchedEmail(String id, Message message, boolean sent) throws MessagingException, IOException {
+	private FetchedEmail toFetchedEmail(String id, Message message) throws MessagingException, IOException {
 		String rawContent = extractText(message);
 		String snippet = rawContent.replaceAll("\\s+", " ").trim();
 		if (snippet.length() > SNIPPET_LENGTH) {
@@ -157,7 +157,7 @@ public class GmailImapClient {
 
 		return new FetchedEmail(
 			id,
-			sent ? EmailDirection.SENT : EmailDirection.INBOUND,
+			EmailDirection.INBOUND,
 			message.getSubject() != null ? message.getSubject() : "",
 			formatAddresses(message.getFrom()),
 			formatAddresses(message.getRecipients(Message.RecipientType.TO)),
