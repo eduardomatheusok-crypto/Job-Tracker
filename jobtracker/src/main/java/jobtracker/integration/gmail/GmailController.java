@@ -126,6 +126,9 @@ public class GmailController {
 				"emailsProcessed", 0,
 				"connected", false
 			));
+		} catch (GmailSyncInProgressException e) {
+			return ResponseEntity.status(HttpStatus.CONFLICT)
+				.body(ApiError.of("Conflict", "Já existe uma sincronização em andamento. Aguarde ela terminar."));
 		} catch (IllegalStateException e) {
 			log.warn("Gmail sync notice: {}", e.getMessage());
 			return ResponseEntity.ok(Map.of(

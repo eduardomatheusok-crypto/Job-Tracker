@@ -15,6 +15,7 @@ import jobtracker.integration.gmail.EmailParserService;
 import jobtracker.integration.gmail.GmailOAuthService;
 import jobtracker.integration.gmail.GmailService;
 import jobtracker.integration.gmail.GmailSyncException;
+import jobtracker.integration.gmail.GmailSyncInProgressException;
 import jobtracker.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -318,5 +319,21 @@ class GmailIntegrationTests {
 			.andExpect(status().isBadGateway())
 			.andExpect(jsonPath("$.message").value("Não foi possível acessar o Gmail agora."))
 			.andExpect(jsonPath("$.connected").doesNotExist());
+	}
+
+	// -----------------------------------------------------------------------
+	// Teste: POST /api/gmail/sync – já existe sincronização em andamento
+	// -----------------------------------------------------------------------
+	@Test
+	void syncEmails_whenAlreadyRunning_returnsConflict() throws Exception {
+		register("Hal Gmail", "hal.gmail@example.com", "password123");
+		String token = loginAndGetToken("hal.gmail@example.com", "password123");
+
+		when(gmailService.syncEmails(anyLong())).thenThrow(new GmailSyncInProgressException(1L));
+
+		mockMvc.perform(post("/api/gmail/sync")
+				.header("Authorization", "Bearer " + token))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.message").value("Já existe uma sincronização em andamento. Aguarde ela terminar."));
 	}
 }

@@ -25,6 +25,8 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import jobtracker.entity.Email;
 import jobtracker.entity.EmailDirection;
 import jobtracker.entity.GmailConnection;
@@ -96,6 +98,13 @@ public class GmailService {
 	private final EmailSyncProcessor emailSyncProcessor;
 	private final GmailImapClient gmailImapClient;
 	private final ProcessadorEmailIAService processadorEmailIAService;
+
+	/**
+	 * Usuários com sincronização em andamento. Evita que o agendador, o auto-sync da página e o clique
+	 * manual rodem juntos e salvem/classifiquem os mesmos e-mails em paralelo. Em memória: vale para uma
+	 * única instância do backend (o caso do Render).
+	 */
+	private final Set<Long> syncsInProgress = ConcurrentHashMap.newKeySet();
 
 	public GmailConnection connectUser(String code, String state) throws IOException {
 		String email = gmailOAuthService.decryptState(state);
@@ -175,6 +184,17 @@ public class GmailService {
 	 * mensagem não derruba o restante do lote.
 	 */
 	public int syncEmails(Long userId) throws IOException {
+		if (!syncsInProgress.add(userId)) {
+			throw new GmailSyncInProgressException(userId);
+		}
+		try {
+			return doSyncEmails(userId);
+		} finally {
+			syncsInProgress.remove(userId);
+		}
+	}
+
+	private int doSyncEmails(Long userId) throws IOException {
 		GmailConnection connection = gmailConnectionRepository.findByUserId(userId)
 			.orElseThrow(() -> new EntityNotFoundException("Gmail integration not active for user: " + userId));
 
@@ -373,6 +393,8 @@ public class GmailService {
 			Long userId = connection.getUser().getId();
 			try {
 				total += syncEmails(userId);
+			} catch (GmailSyncInProgressException e) {
+				log.info("Gmail scheduled sync skipped for user {}: another sync is running", userId);
 			} catch (Exception e) {
 				log.warn("Gmail sync failed for user {}", userId, e);
 			}
